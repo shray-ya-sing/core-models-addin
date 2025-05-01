@@ -118,14 +118,99 @@ export class ClientWorkbookStateManager {
   
   /**
    * Invalidate the workbook state cache
+   * @param operationType Optional operation type or comma-separated list of operation types to selectively invalidate based on operation
    */
-  public invalidateCache(): void {
-    console.log('%c Invalidating workbook state cache', 'color: #e74c3c');
-    this.cachedState = null;
-    this.lastCaptureTime = 0;
+  public invalidateCache(operationType?: string): void {
+    // If no operation type is provided, invalidate the full cache
+    if (!operationType) {
+      console.log('%c Invalidating workbook state cache (no operation type specified)', 'color: #e74c3c');
+      this.cachedState = null;
+      this.lastCaptureTime = 0;
+      this.metadataCache.invalidateAllChunks();
+      return;
+    }
     
-    // Also invalidate chunks in the metadata cache
-    this.metadataCache.invalidateAllChunks();
+    // Handle multiple operation types (comma-separated)
+    const operationTypes = operationType.includes(',') 
+      ? operationType.split(',').map(op => op.trim()) 
+      : [operationType];
+    
+    // Check if any of the operation types require cache invalidation
+    const requiresInvalidation = operationTypes.some(op => this.requiresFullCacheInvalidation(op));
+    
+    if (requiresInvalidation) {
+      console.log('%c Invalidating workbook state cache for operations: ' + operationTypes.join(', '), 'color: #e74c3c');
+      this.cachedState = null;
+      this.lastCaptureTime = 0;
+      
+      // Also invalidate chunks in the metadata cache
+      this.metadataCache.invalidateAllChunks();
+    } else {
+      console.log(`%c Operations [${operationTypes.join(', ')}] do not require cache invalidation`, 'color: #2ecc71');
+    }
+  }
+  
+  /**
+   * Determines if an operation type requires full cache invalidation
+   * @param operationType The operation type to check
+   * @returns True if the operation modifies data and requires cache invalidation
+   */
+  private requiresFullCacheInvalidation(operationType: string): boolean {
+    // Normalize operation type to lowercase for case-insensitive comparison
+    const normalizedOp = operationType.toLowerCase();
+    
+    // Operations that only modify UI/display settings and don't need cache invalidation
+    const uiOnlyOperations = [
+      'set_gridlines',
+      'set_headers',
+      'set_zoom',
+      'set_freeze_panes',
+      'set_visible',
+      'set_active_sheet',
+      'set_print_area',
+      'set_print_orientation',
+      'set_print_margins',
+      'format_chart',
+      'format_chart_axis',
+      'format_chart_series'
+    ];
+    
+    // Check if the operation is in the UI-only list
+    if (uiOnlyOperations.includes(normalizedOp)) {
+      console.log(`Operation ${operationType} is UI-only and doesn't require cache invalidation`);
+      return false;
+    }
+    
+    // Operations that modify data and require cache invalidation
+    const dataModifyingOperations = [
+      'set_value',
+      'add_formula',
+      'create_chart',
+      'format_range',
+      'clear_range',
+      'create_table',
+      'sort_range',
+      'filter_range',
+      'create_sheet',
+      'delete_sheet',
+      'rename_sheet',
+      'copy_range',
+      'merge_cells',
+      'unmerge_cells',
+      'conditional_format',
+      'add_comment'
+    ];
+    
+    // Check if the operation is in the data-modifying list
+    const requiresInvalidation = dataModifyingOperations.includes(normalizedOp);
+    
+    // If not explicitly listed in either category, default to requiring invalidation (safer)
+    if (!requiresInvalidation && !uiOnlyOperations.includes(normalizedOp)) {
+      console.log(`Operation ${operationType} not recognized, defaulting to cache invalidation for safety`);
+      return true;
+    }
+    
+    return requiresInvalidation;
   }
   
   /**

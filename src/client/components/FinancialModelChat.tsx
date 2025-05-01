@@ -394,13 +394,13 @@ export const FinancialModelChat: React.FC = () => {
         const unsubscribeCommandUpdate = manager.onCommandUpdate((command) => {
           console.log('Command update received:', command);
           
-          // If the command is completed, we can add a message to the chat
+          // If the command is completed, log it but don't add a message to the chat
           if (command.status === CommandStatus.Completed) {
-            setMessages(prev => [...prev, { 
-              role: 'system', 
-              content: `Command "${command.description}" completed successfully.` 
-            }]);
+            console.log(`Command "${command.description}" completed successfully.`);
+            // Removed system message
           } else if (command.status === CommandStatus.Failed) {
+            console.error(`Command "${command.description}" failed: ${command.error || 'Unknown error'}`);
+            // Only show error messages, not success messages
             setMessages(prev => [...prev, { 
               role: 'system', 
               content: `Command "${command.description}" failed: ${command.error || 'Unknown error'}` 
@@ -756,12 +756,10 @@ export const FinancialModelChat: React.FC = () => {
         ));
       }
       
-      // If there's a command in the response, show a message about it
+      // If there's a command in the response, log it but don't show a message
       if (result.command) {
-        setMessages(prev => [...prev, { 
-          role: 'system', 
-          content: `Executing command: ${result.command.description}` 
-        }]);
+        console.log(`Executing command: ${result.command.description}`);
+        // Removed system message
       }
     } catch (error) {
       console.error('%c CRITICAL ERROR in message handling:', 'background: #f00; color: #fff; font-size: 14px', error);

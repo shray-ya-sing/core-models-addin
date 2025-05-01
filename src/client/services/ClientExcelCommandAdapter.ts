@@ -19,19 +19,33 @@ export class ClientExcelCommandAdapter {
   /**
    * Execute a command using the Excel Operations DSL
    * @param command The command to execute
+   * @returns Array of operation types that were executed
    */
-  public async executeCommand(command: Command): Promise<void> {
+  public async executeCommand(command: Command): Promise<string[]> {
     try {
+      // Track all operation types that were executed
+      const executedOperationTypes: string[] = [];
+      
       // Process each step in the command
       for (const step of command.steps) {
         // Extract Excel operations from the step operations
         const excelOperations = this.extractExcelOperations(step.operations);
         
         if (excelOperations.length > 0) {
+          // Collect all operation types for cache invalidation
+          excelOperations.forEach(op => {
+            if (op.op && !executedOperationTypes.includes(op.op)) {
+              executedOperationTypes.push(op.op);
+            }
+          });
+          
           // Execute the Excel operations using the interpreter
           await this.interpreter.executeOperations(excelOperations);
         }
       }
+      
+      // Return the operation types that were executed
+      return executedOperationTypes;
     } catch (error) {
       console.error('Error executing Excel command:', error);
       throw error;

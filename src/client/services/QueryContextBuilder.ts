@@ -48,24 +48,13 @@ export class QueryContextBuilder {
   ): Promise<QueryContext> {
     console.log(
       `%c Building query context for: "${stepQuery.substring(0, 50)}${stepQuery.length > 50 ? '...' : ''}"`,
+      'queryType:', queryType,
       'background: #2c3e50; color: #ecf0f1; font-size: 12px; padding: 2px 5px;'
     );
 
-    // Determine if we need to force refresh based on query type
-    // For command operations, we should always force refresh
-    const isCommandOperation = 
-      queryType === QueryType.WorkbookCommand || 
-      queryType === QueryType.WorkbookCommandWithKB;
-    
-    let forceRefresh = false;
-    if (isCommandOperation) {
-      console.log('%c Command operation detected, forcing refresh', 'color: #f39c12');
-      forceRefresh = true;
-    }
-    
     // First, ensure all sheets are captured and cached
     // This ensures we have complete dependency information
-    await this.ensureAllSheetsCached(forceRefresh);
+    await this.ensureAllSheetsCached(false);
     
     // Identify relevant sheets based on the step query
     const relevantSheetIds = await this.identifyRelevantSheets(stepQuery, chatHistory);

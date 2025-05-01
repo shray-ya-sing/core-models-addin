@@ -541,7 +541,7 @@ export class ClientQueryProcessor {
       sm.updateStatus(pid, {
         stage: ProcessStage.CommandPlanning,
         status: ProcessStatus.Pending,
-        message: 'Planning operations…'
+        message: 'Command plan ready...'
       });
     
       try {
@@ -595,7 +595,7 @@ export class ClientQueryProcessor {
         sm.updateStatus(pid, {
           stage: ProcessStage.CommandPlanning,
           status: ProcessStatus.Success,
-          message: 'Command plan ready, preparing to execute...'
+          message: 'Preparing to execute...'
         });
     
         // Add command to the manager and register for status updates
@@ -610,13 +610,13 @@ export class ClientQueryProcessor {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Pending,
-              message: `Executing: ${updatedCommand.description}`,
+              message: `Processing your request...`,
             });
           } else if (updatedCommand.status === CommandStatus.Completed) {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Success,
-              message: 'Command executed successfully',
+              message: 'I completed the operation successfully',
             });
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
@@ -624,7 +624,7 @@ export class ClientQueryProcessor {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Error,
-              message: `Command execution failed: ${updatedCommand.error || 'Unknown error'}`,
+              message: `I failed to complete the operation. Please try again`,
             });
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
@@ -641,9 +641,8 @@ export class ClientQueryProcessor {
           // Error will be handled by the status listener
         });
         
-        // Generate a user-friendly message about what will be done
-        const assistantMessage = `I'll ${operationPlan.description.toLowerCase()}. ` +
-          `This will involve ${operationPlan.operations.length} Excel operations.`;
+        // Generate a simpler user-friendly message without mentioning operation count
+        const assistantMessage = `I'll ${operationPlan.description.toLowerCase()}.`;
         
         return {
           processId: pid,
@@ -656,7 +655,7 @@ export class ClientQueryProcessor {
         sm.updateStatus(pid, {
           stage: ProcessStage.CommandPlanning,
           status: ProcessStatus.Error,
-          message: `Error planning commands: ${error.message}`
+          message: `I failed to complete the operation. Please try again`
         });
         
         return {
