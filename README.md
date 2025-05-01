@@ -1,21 +1,21 @@
 # Cori Excel Add-in
 
-The Cori Excel Add-in is an Excel assistant that helps analysts move faster through their Excel workflow by extracting data, explaining, question answering, and executing tasks.
-
+The Cori Excel Add-in is a fully client-side Excel assistant that helps analysts move faster through their Excel workflow by extracting data, explaining, question answering, and executing tasks—all directly in the browser.
 
 ## Technology Stack
 
-### Client-side
+### Client-side Architecture
 - **React**: UI framework for building the add-in interface
 - **TypeScript**: Type-safe JavaScript for improved development experience
 - **Office.js**: Excel JavaScript API for interacting with Excel
 - **Fluent UI**: Microsoft's design system for Office add-ins
-- **Anthropic Claude**: AI service for natural language processing and financial model understanding
+- **Anthropic Claude Integration**: AI service for natural language processing and financial model understanding
 - **WebSockets**: For real-time command execution updates
+- **Client-side State Management**: In-browser workbook state cache with granular sheet-level tracking
 
 ### Storage
-- **LocalStorage**: Browser-based storage for user preferences
-- **File System**: Local storage for document caching and embeddings
+- **LocalStorage**: Browser-based storage for user preferences and state
+- **Browser Cache**: Client-side storage for workbook snapshots and query results
 
 ### Development & Testing
 - **Jest**: Testing framework for unit and integration tests
@@ -32,14 +32,16 @@ Excel add-ins are web applications that extend Excel's functionality using the O
 
 2. **Manifest File**: An XML file that specifies how the add-in should be integrated into Excel, including permissions, UI elements, and entry points.
 
-This Core Models Excel Add-in uses a fully client-side architecture:
+This Core Models Excel Add-in uses a 100% client-side architecture:
 
 When the add-in runs, it:
 1. **Loads the web application** in a task pane within Excel
 2. **Initializes client-side services** for workbook state management, command execution, and LLM integration
 3. **Interacts with Excel** using the Office.js API to read and write data
-4. **Processes commands** directly in the browser using the client-side implementation
-5. **Connects to external APIs** for LLM processing when needed
+4. **Processes commands** entirely in the browser using the client-side implementation
+5. **Uses intelligent caching** to minimize redundant workbook state captures
+6. **Performs granular workbook analysis** with sheet-level dependency tracking
+7. **Connects to external APIs** for LLM processing only when needed
 
 ### Prerequisites
 
@@ -76,14 +78,16 @@ The add-in project that you've created contains sample code for a basic task pan
 
 ### Key Components
 
-#### Vector Store and Document Processing
 #### Client-side Services
-- `./src/client/services/ClientWorkbookStateManager.ts`: Captures and manages Excel workbook state
+- `./src/client/services/ClientWorkbookStateManager.ts`: Captures and manages Excel workbook state with efficient caching
+- `./src/client/services/RangeDependencyAnalyzer.ts`: Analyzes sheet dependencies through formulas
 - `./src/client/services/ClientCommandExecutor.ts`: Executes operations in Excel
 - `./src/client/services/ClientCommandManager.ts`: Manages command execution and tracking
 - `./src/client/services/ClientSpreadsheetCompressor.ts`: Compresses workbook state for LLM processing
+- `./src/client/services/ClientQueryProcessor.ts`: Processes different types of queries with context awareness
 - `./src/client/services/ClientAnthropicService.ts`: Integrates with Anthropic Claude for LLM capabilities
 - `./src/client/services/ClientKnowledgeBaseService.ts`: Connects with external knowledge base API
+- `./src/client/services/WebSocketClient.ts`: Handles real-time updates
 
 #### UI Components
 - `./src/client/components/FinancialModelChat.tsx`: Main chat interface for interacting with the financial model
