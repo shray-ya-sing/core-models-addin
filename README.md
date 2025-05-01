@@ -76,74 +76,6 @@ The add-in project that you've created contains sample code for a basic task pan
 - `./src/taskpane/taskpane.html`: Contains the HTML markup for the task pane
 - `./src/taskpane/**/*.tsx`: React components and Excel JavaScript API integration
 
-### Key Components
-
-#### Client-side Services
-- `./src/client/services/ClientWorkbookStateManager.ts`: Captures and manages Excel workbook state with efficient caching
-- `./src/client/services/RangeDependencyAnalyzer.ts`: Analyzes sheet dependencies through formulas
-- `./src/client/services/ClientCommandExecutor.ts`: Executes operations in Excel
-- `./src/client/services/ClientCommandManager.ts`: Manages command execution and tracking
-- `./src/client/services/ClientSpreadsheetCompressor.ts`: Compresses workbook state for LLM processing
-- `./src/client/services/ClientQueryProcessor.ts`: Processes different types of queries with context awareness
-- `./src/client/services/ClientAnthropicService.ts`: Integrates with Anthropic Claude for LLM capabilities
-- `./src/client/services/ClientKnowledgeBaseService.ts`: Connects with external knowledge base API
-- `./src/client/services/WebSocketClient.ts`: Handles real-time updates
-
-#### UI Components
-- `./src/client/components/FinancialModelChat.tsx`: Main chat interface for interacting with the financial model
-- `./src/client/components/CommandExecutionPanel.tsx`: Displays command execution status and results
-- `./src/taskpane/components/App.tsx`: Main application component
-- `./src/taskpane/components/Header.tsx`: Header component for the application
-
-### Test Suites
-
-#### Client-side Service Tests
-- `./tests/client/services/ClientCommandExecutor.test.ts`: Tests for client-side command execution
-- `./tests/client/services/ClientCommandManager.test.ts`: Tests for command management
-- `./tests/client/services/ClientWorkbookStateManager.test.ts`: Tests for workbook state management
-- `./tests/client/services/ClientSpreadsheetCompressor.test.ts`: Tests for spreadsheet compression
-- `./tests/client/services/ClientAnthropicService.test.ts`: Tests for Anthropic LLM integration
-
-#### Query Processing Tests
-- `./tests/client/services/QueryProcessorService.test.ts`: Tests for query processing
-- `./tests/client/services/QueryClassifier.test.ts`: Tests for query classification
-- `./tests/client/services/QueryDecomposer.test.ts`: Tests for multi-step query decomposition
-- `./tests/client/services/KnowledgeBaseCommandIntegration.test.ts`: Tests for knowledge base integration
-- `./tests/server/services/documentIndexService.test.ts`: Tests for document indexing service
-- `./tests/server/services/documentService.test.ts`: Tests for document processing service
-
-#### Data Extraction and Analysis Tests
-- `./tests/server/services/contextAwareDataPopulation.test.ts`: Tests for context-aware data extraction
-- `./tests/server/services/dataExtractionService.test.ts`: Tests for data extraction functionality
-- `./tests/server/services/workbookAnalysisService.test.ts`: Tests for Excel workbook analysis
-- `./tests/server/services/worksheetAnalyzer.test.ts`: Tests for Excel worksheet analysis
-
-#### API and Controller Tests
-- `./tests/server/controllers/coriController.test.ts`: Tests for main controller functionality
-- `./tests/server/controllers/suggestionController.test.ts`: Tests for suggestion generation
-- `./tests/server/routes/coriRoutes.test.ts`: Tests for API routes
-- `./tests/server/routes/excelPopulationRoutes.test.ts`: Tests for Excel data population routes
-
-## Implementation Status
-
-### Completed Features
-- ✅ Document vectorization and embedding generation
-- ✅ VoyageAI integration for high-quality multimodal embeddings
-- ✅ HTML content extraction and processing
-- ✅ Local fallback for embedding generation when API is unavailable
-- ✅ Basic semantic search functionality
-- ✅ Test suite for core functionality
-
-### In Progress
-- 🔄 Advanced context-aware data extraction
-- 🔄 UI refinements for better user experience
-- 🔄 Performance optimizations for large document sets
-
-### Planned Features
-- 📋 PDF content extraction improvements
-- 📋 Image content analysis
-- 📋 Multi-document relationship mapping
-- 📋 Advanced data visualization options
 
 ## Configuration
 
@@ -162,17 +94,13 @@ If you have problems running the add-in, take these steps.
 - Close any open instances of Excel.
 - Close the previous web server started for the add-in with the **Stop Previewing Your Office Add-in** Office Add-ins Development Kit extension option.
 - Check that your VoyageAI API key is correctly set in the `.env` file.
+- Check that your Anthropic API key is correctly set in the .env file.
 - Verify that the necessary npm packages are installed with `npm install`.
 
 If you still have problems, see [troubleshoot development errors](https://learn.microsoft.com//office/dev/add-ins/testing/troubleshoot-development-errors) or [create a GitHub issue](https://aka.ms/officedevkitnewissue) and we'll help you.  
 
 For information on running the add-in on Excel on the web, see [Sideload Office Add-ins to Office on the web](https://learn.microsoft.com/office/dev/add-ins/testing/sideload-office-add-ins-for-testing).
 
-## Make code changes
-
-All the information about Office Add-ins is found in our [official documentation](https://learn.microsoft.com/office/dev/add-ins/overview/office-add-ins). You can also explore more samples in the Office Add-ins Development Kit. Select **View Samples** to see more samples of real-world scenarios.
-
-If you edit the manifest as part of your changes, use the **Validate Manifest File** option in the Office Add-ins Development Kit. This shows you errors in the manifest syntax.
 
 ## Copyright and License
 
