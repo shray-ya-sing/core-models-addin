@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Add-in Testing Form</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .intro {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .status {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .status div {
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .working {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .not-working {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        select {
+            width: 100%;
+            padding: 5px;
+        }
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .save-btn:hover {
+            background-color: #45a049;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            margin-bottom: 20px;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+        #summary {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel Add-in Testing Form</h1>
+    
+    <div class="intro">
+        <h2>Introduction</h2>
+        <p>Thank you for helping test the Excel Financial Models Add-in! This form will guide you through testing the add-in's capabilities and recording your results.</p>
+        
+        <h3>Current Capabilities</h3>
+        <div class="status">
+            <div class="working">✅ Workbook Analysis</div>
+            <div class="working">✅ Question Answering</div>
+            <div class="working">✅ Formula Explanation</div>
+            <div class="not-working">❌ Knowledge Base Integration</div>
+            <div class="not-working">❌ Command Execution</div>
+        </div>
+        
+        <p><strong>Important</strong>: At this stage, the add-in is best at "explaining" or "answering questions" about the workbook rather than making modifications. Please focus your testing on these explanation capabilities.</p>
+    </div>
+    
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'summary')">Summary</button>
+        <button class="tablinks" onclick="openTab(event, 'workbook')">Workbook-Level</button>
+        <button class="tablinks" onclick="openTab(event, 'worksheet')">Worksheet-Level</button>
+        <button class="tablinks" onclick="openTab(event, 'cellrange')">Cell Range-Level</button>
+    </div>
+    
+    <div id="summary" class="tabcontent">
+        <h2>Testing Summary</h2>
+        <p>Please provide your overall feedback about the add-in after completing the tests:</p>
+        <textarea id="overall-feedback" placeholder="Enter your overall feedback here..." rows="6"></textarea>
+        
+        <h3>Testing Instructions</h3>
+        <ol>
+            <li>Open a financial model in Excel (ideally a model with multiple sheets, formulas, and financial concepts)</li>
+            <li>Start the add-in following the installation guide</li>
+            <li>Click through the tabs above to test different types of questions</li>
+            <li>For each test query, select a result and provide feedback</li>
+            <li>When finished, click "Save Results" at the bottom of the page</li>
+        </ol>
+        
+        <h3>Result Legend</h3>
+        <ul>
+            <li><strong>✅ Success</strong>: The add-in provided a helpful, accurate response</li>
+            <li><strong>⚠️ Partial</strong>: The add-in understood but gave incomplete information</li>
+            <li><strong>❌ Failure</strong>: The add-in misunderstood or gave incorrect information</li>
+        </ul>
+    </div>
+    
+    <div id="workbook" class="tabcontent">
+        <h2>Workbook-Level Questions</h2>
+        <p>These questions test the add-in's ability to understand and explain the entire financial model.</p>
+        <table id="workbook-table">
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>What type of financial model is this?</td>
+                <td>
+                    <select name="result-wb-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Explain the overall structure of this workbook.</td>
+                <td>
+                    <select name="result-wb-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>What are the key assumptions in this model?</td>
+                <td>
+                    <select name="result-wb-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>How are the different sheets in this workbook connected?</td>
+                <td>
+                    <select name="result-wb-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>What are the main outputs or KPIs in this model?</td>
+                <td>
+                    <select name="result-wb-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>What are the key financial metrics calculated in this model?</td>
+                <td>
+                    <select name="result-wb-6">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-6" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>Identify the growth assumptions used in this financial model.</td>
+                <td>
+                    <select name="result-wb-7">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-7" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>How is working capital calculated in this model?</td>
+                <td>
+                    <select name="result-wb-8">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-8" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>What valuation methods are used in this financial model?</td>
+                <td>
+                    <select name="result-wb-9">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-9" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>Explain the revenue forecasting methodology in this model.</td>
+                <td>
+                    <select name="result-wb-10">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-10" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td>What sensitivity analyses are included in this model?</td>
+                <td>
+                    <select name="result-wb-11">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-11" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>12</td>
+                <td>How is depreciation calculated throughout this model?</td>
+                <td>
+                    <select name="result-wb-12">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-12" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>13</td>
+                <td>Explain the debt structure modeled in this workbook.</td>
+                <td>
+                    <select name="result-wb-13">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-13" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>14</td>
+                <td>What tax assumptions are used in this financial model?</td>
+                <td>
+                    <select name="result-wb-14">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-14" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>15</td>
+                <td>How are capital expenditures projected in this model?</td>
+                <td>
+                    <select name="result-wb-15">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-15" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>16</td>
+                <td>What are the exit assumptions in this financial model?</td>
+                <td>
+                    <select name="result-wb-16">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-16" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>17</td>
+                <td>Identify the key financial ratios calculated in this model.</td>
+                <td>
+                    <select name="result-wb-17">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-17" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>18</td>
+                <td>How is the discount rate determined in this model?</td>
+                <td>
+                    <select name="result-wb-18">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-18" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>19</td>
+                <td>What scenario analyses are included in this financial model?</td>
+                <td>
+                    <select name="result-wb-19">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-19" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>20</td>
+                <td>Explain the cash flow forecasting methodology in this model.</td>
+                <td>
+                    <select name="result-wb-20">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-wb-20" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="worksheet" class="tabcontent">
+        <h2>Worksheet-Level Questions</h2>
+        <p>These questions test the add-in's ability to understand and explain specific worksheets. Replace [Sheet Name] with an actual sheet name from your workbook.</p>
+        <table id="worksheet-table">
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>What is the purpose of the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Explain the calculations on the [Sheet Name] sheet.</td>
+                <td>
+                    <select name="result-ws-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>What are the key inputs on the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>How does the [Sheet Name] sheet connect to other sheets?</td>
+                <td>
+                    <select name="result-ws-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>What formulas are used most frequently on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>What assumptions drive the calculations on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-6">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-6" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>Explain the structure and organization of the [Sheet Name] worksheet.</td>
+                <td>
+                    <select name="result-ws-7">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-7" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>What are the key outputs or results on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-8">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-8" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>How are growth rates applied in the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-9">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-9" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>What financial metrics are calculated on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-10">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-10" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td>Identify any data validation rules used on the [Sheet Name] worksheet.</td>
+                <td>
+                    <select name="result-ws-11">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-11" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>12</td>
+                <td>How are taxes calculated on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-12">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-12" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>13</td>
+                <td>What conditional formatting is used on the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-13">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-13" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>14</td>
+                <td>Explain the timeline structure on the [Sheet Name] sheet.</td>
+                <td>
+                    <select name="result-ws-14">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-14" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>15</td>
+                <td>What lookup or reference functions are used on the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-15">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-15" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>16</td>
+                <td>How is depreciation handled on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-16">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-16" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>17</td>
+                <td>What charts or data visualizations are included on the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-17">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-17" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>18</td>
+                <td>Explain how working capital is calculated on the [Sheet Name] sheet.</td>
+                <td>
+                    <select name="result-ws-18">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-18" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>19</td>
+                <td>What error handling or data validation exists on the [Sheet Name] worksheet?</td>
+                <td>
+                    <select name="result-ws-19">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-19" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>20</td>
+                <td>How are scenarios or sensitivities implemented on the [Sheet Name] sheet?</td>
+                <td>
+                    <select name="result-ws-20">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ws-20" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="cellrange" class="tabcontent">
+        <h2>Cell Range-Level Questions</h2>
+        <p>These questions test the add-in's ability to understand and explain specific cells or ranges. Replace placeholders like [range] or [cell reference] with actual values from your workbook.</p>
+        <table id="cellrange-table">
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Explain what cells [range, e.g., A1:B10] are calculating.</td>
+                <td>
+                    <select name="result-cr-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>What does the formula in cell [e.g., B15] mean?</td>
+                <td>
+                    <select name="result-cr-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>How is [specific value, e.g., EBITDA] calculated in this range?</td>
+                <td>
+                    <select name="result-cr-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>What are the inputs for the calculation in [cell reference]?</td>
+                <td>
+                    <select name="result-cr-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Explain the purpose of the table in [range].</td>
+                <td>
+                    <select name="result-cr-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>What financial concept does the calculation in [cell reference] represent?</td>
+                <td>
+                    <select name="result-cr-6">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-6" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>How would changing the value in [cell reference] impact other calculations?</td>
+                <td>
+                    <select name="result-cr-7">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-7" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>Trace the precedent cells that feed into [cell reference].</td>
+                <td>
+                    <select name="result-cr-8">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-8" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>What is the financial significance of the values in [range]?</td>
+                <td>
+                    <select name="result-cr-9">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-9" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>Explain the array formula in [cell reference].</td>
+                <td>
+                    <select name="result-cr-10">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-10" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td>What Excel functions are used in the formulas in [range]?</td>
+                <td>
+                    <select name="result-cr-11">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-11" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>12</td>
+                <td>How does the calculation in [cell reference] change across the forecast period?</td>
+                <td>
+                    <select name="result-cr-12">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-12" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>13</td>
+                <td>What conditional formatting is applied to [range] and why?</td>
+                <td>
+                    <select name="result-cr-13">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-13" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>14</td>
+                <td>Explain the data validation rules applied to [cell reference or range].</td>
+                <td>
+                    <select name="result-cr-14">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-14" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>15</td>
+                <td>What is the purpose of the named range that includes [cell reference]?</td>
+                <td>
+                    <select name="result-cr-15">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-15" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>16</td>
+                <td>How does the chart in [range] visualize the underlying data?</td>
+                <td>
+                    <select name="result-cr-16">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-16" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>17</td>
+                <td>What cross-sheet references are used in the formulas in [range]?</td>
+                <td>
+                    <select name="result-cr-17">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-17" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>18</td>
+                <td>Explain the financial ratio calculated in [cell reference].</td>
+                <td>
+                    <select name="result-cr-18">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-18" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>19</td>
+                <td>What is the error handling approach used in the formulas in [range]?</td>
+                <td>
+                    <select name="result-cr-19">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-19" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>20</td>
+                <td>How does the pivot table in [range] summarize the underlying data?</td>
+                <td>
+                    <select name="result-cr-20">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-cr-20" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+
+    <div id="custom-queries" class="tabcontent">
+        <h2>Custom Queries</h2>
+        <p>Use this section to add your own test queries that you've tried with the add-in.</p>
+        
+        <div id="custom-query-form">
+            <h3>Add New Query</h3>
+            <div style="margin-bottom: 15px;">
+                <label for="query-type">Query Type:</label>
+                <select id="query-type" style="width: 200px; margin-left: 10px;">
+                    <option value="workbook">Workbook-Level</option>
+                    <option value="worksheet">Worksheet-Level</option>
+                    <option value="cellrange">Cell Range-Level</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="query-text">Query Text:</label>
+                <textarea id="query-text" style="width: 100%; min-height: 60px;" placeholder="Enter your query here..."></textarea>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="query-result">Result:</label>
+                <select id="query-result" style="width: 200px; margin-left: 10px;">
+                    <option value="">Select...</option>
+                    <option value="success">✅ Success</option>
+                    <option value="partial">⚠️ Partial</option>
+                    <option value="failure">❌ Failure</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="query-feedback">Feedback:</label>
+                <textarea id="query-feedback" style="width: 100%; min-height: 60px;" placeholder="Enter your feedback here..."></textarea>
+            </div>
+            <button class="save-btn" onclick="addCustomQuery()">Add Query</button>
+        </div>
+        
+        <h3 style="margin-top: 30px;">Your Custom Queries</h3>
+        <table id="custom-queries-table">
+            <tr>
+                <th width="5%">#</th>
+                <th width="15%">Type</th>
+                <th width="40%">Query</th>
+                <th width="10%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <!-- Custom queries will be added here dynamically -->
+        </table>
+    </div>
+    
+    <button class="save-btn" onclick="saveResults()">Save Results</button>
+    
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        function saveResults() {
+            // Collect all form data
+            const formData = {
+                overallFeedback: document.getElementById('overall-feedback').value,
+                workbookTests: {},
+                worksheetTests: {},
+                cellRangeTests: {}
+            };
+            
+            // Collect workbook test results
+            const workbookSelects = document.querySelectorAll('#workbook-table select');
+            const workbookTextareas = document.querySelectorAll('#workbook-table textarea');
+            
+            for (let i = 0; i < workbookSelects.length; i++) {
+                const testNumber = workbookSelects[i].name.split('-')[2];
+                formData.workbookTests[testNumber] = {
+                    result: workbookSelects[i].value,
+                    feedback: workbookTextareas[i].value
+                };
+            }
+            
+            // Collect worksheet test results
+            const worksheetSelects = document.querySelectorAll('#worksheet-table select');
+            const worksheetTextareas = document.querySelectorAll('#worksheet-table textarea');
+            
+            for (let i = 0; i < worksheetSelects.length; i++) {
+                const testNumber = worksheetSelects[i].name.split('-')[2];
+                formData.worksheetTests[testNumber] = {
+                    result: worksheetSelects[i].value,
+                    feedback: worksheetTextareas[i].value
+                };
+            }
+            
+            // Collect cell range test results
+            const cellRangeSelects = document.querySelectorAll('#cellrange-table select');
+            const cellRangeTextareas = document.querySelectorAll('#cellrange-table textarea');
+            
+            for (let i = 0; i < cellRangeSelects.length; i++) {
+                const testNumber = cellRangeSelects[i].name.split('-')[2];
+                formData.cellRangeTests[testNumber] = {
+                    result: cellRangeSelects[i].value,
+                    feedback: cellRangeTextareas[i].value
+                };
+            }
+            
+            // Convert to JSON and create download
+            const jsonData = JSON.stringify(formData, null, 2);
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'excel-addin-test-results.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            alert('Test results saved! Please email the downloaded JSON file back to the development team.');
+        }
+    </script>
+</body>
+</html>

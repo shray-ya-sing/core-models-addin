@@ -1,0 +1,177 @@
+# Cori Excel Add-in
+
+The Cori Excel Add-in is an Excel assistant that helps analysts move faster through their Excel workflow by extracting data, explaining, question answering, and executing tasks.
+
+
+## Technology Stack
+
+### Client-side
+- **React**: UI framework for building the add-in interface
+- **TypeScript**: Type-safe JavaScript for improved development experience
+- **Office.js**: Excel JavaScript API for interacting with Excel
+- **Fluent UI**: Microsoft's design system for Office add-ins
+- **Anthropic Claude**: AI service for natural language processing and financial model understanding
+- **WebSockets**: For real-time command execution updates
+
+### Storage
+- **LocalStorage**: Browser-based storage for user preferences
+- **File System**: Local storage for document caching and embeddings
+
+### Development & Testing
+- **Jest**: Testing framework for unit and integration tests
+- **Webpack**: Module bundler for building the application
+- **ESLint**: Code linting for maintaining code quality
+
+## How to run this project
+
+### Understanding Excel Add-ins
+
+Excel add-ins are web applications that extend Excel's functionality using the Office JavaScript API. They consist of two main parts:
+
+1. **Web Application**: A web app built with HTML, CSS, and JavaScript/TypeScript that runs in a browser control or iframe within Excel. This provides the UI and business logic.
+
+2. **Manifest File**: An XML file that specifies how the add-in should be integrated into Excel, including permissions, UI elements, and entry points.
+
+This Core Models Excel Add-in uses a fully client-side architecture:
+
+When the add-in runs, it:
+1. **Loads the web application** in a task pane within Excel
+2. **Initializes client-side services** for workbook state management, command execution, and LLM integration
+3. **Interacts with Excel** using the Office.js API to read and write data
+4. **Processes commands** directly in the browser using the client-side implementation
+5. **Connects to external APIs** for LLM processing when needed
+
+### Prerequisites
+
+- Node.js (the latest LTS version). Visit the [Node.js site](https://nodejs.org/) to download and install the right version for your operating system. To verify that you've already installed these tools, run the commands `node -v` and `npm -v` in your terminal.
+- Office connected to a Microsoft 365 subscription (for production use)
+- Anthropic API key (for LLM integration)
+
+### Run the add-in using Office Add-ins Development Kit extension
+
+1. **Open the Office Add-ins Development Kit**
+    
+    In the **Activity Bar**, select the **Office Add-ins Development Kit** icon to open the extension.
+
+1. **Preview Your Office Add-in (F5)**
+
+    Select **Preview Your Office Add-in(F5)** to launch the add-in and debug the code. In the Quick Pick menu, select the option **Excel Desktop (Edge Chromium)**.
+
+    The extension then checks that the prerequisites are met before debugging starts. Check the terminal for detailed information if there are issues with your environment. After this process, the Excel desktop application launches and sideloads the add-in.
+
+1. **Stop Previewing Your Office Add-in**
+
+    Once you are finished testing and debugging the add-in, select **Stop Previewing Your Office Add-in**. This closes the web server and removes the add-in from the registry and cache.
+
+## Use the add-in project
+
+The add-in project that you've created contains sample code for a basic task pane add-in.
+
+## Project Structure and Key Components
+
+### Core Files
+- `./manifest.xml`: Defines the settings and capabilities of the add-in
+- `./src/taskpane/taskpane.html`: Contains the HTML markup for the task pane
+- `./src/taskpane/**/*.tsx`: React components and Excel JavaScript API integration
+
+### Key Components
+
+#### Vector Store and Document Processing
+#### Client-side Services
+- `./src/client/services/ClientWorkbookStateManager.ts`: Captures and manages Excel workbook state
+- `./src/client/services/ClientCommandExecutor.ts`: Executes operations in Excel
+- `./src/client/services/ClientCommandManager.ts`: Manages command execution and tracking
+- `./src/client/services/ClientSpreadsheetCompressor.ts`: Compresses workbook state for LLM processing
+- `./src/client/services/ClientAnthropicService.ts`: Integrates with Anthropic Claude for LLM capabilities
+- `./src/client/services/ClientKnowledgeBaseService.ts`: Connects with external knowledge base API
+
+#### UI Components
+- `./src/client/components/FinancialModelChat.tsx`: Main chat interface for interacting with the financial model
+- `./src/client/components/CommandExecutionPanel.tsx`: Displays command execution status and results
+- `./src/taskpane/components/App.tsx`: Main application component
+- `./src/taskpane/components/Header.tsx`: Header component for the application
+
+### Test Suites
+
+#### Client-side Service Tests
+- `./tests/client/services/ClientCommandExecutor.test.ts`: Tests for client-side command execution
+- `./tests/client/services/ClientCommandManager.test.ts`: Tests for command management
+- `./tests/client/services/ClientWorkbookStateManager.test.ts`: Tests for workbook state management
+- `./tests/client/services/ClientSpreadsheetCompressor.test.ts`: Tests for spreadsheet compression
+- `./tests/client/services/ClientAnthropicService.test.ts`: Tests for Anthropic LLM integration
+
+#### Query Processing Tests
+- `./tests/client/services/QueryProcessorService.test.ts`: Tests for query processing
+- `./tests/client/services/QueryClassifier.test.ts`: Tests for query classification
+- `./tests/client/services/QueryDecomposer.test.ts`: Tests for multi-step query decomposition
+- `./tests/client/services/KnowledgeBaseCommandIntegration.test.ts`: Tests for knowledge base integration
+- `./tests/server/services/documentIndexService.test.ts`: Tests for document indexing service
+- `./tests/server/services/documentService.test.ts`: Tests for document processing service
+
+#### Data Extraction and Analysis Tests
+- `./tests/server/services/contextAwareDataPopulation.test.ts`: Tests for context-aware data extraction
+- `./tests/server/services/dataExtractionService.test.ts`: Tests for data extraction functionality
+- `./tests/server/services/workbookAnalysisService.test.ts`: Tests for Excel workbook analysis
+- `./tests/server/services/worksheetAnalyzer.test.ts`: Tests for Excel worksheet analysis
+
+#### API and Controller Tests
+- `./tests/server/controllers/coriController.test.ts`: Tests for main controller functionality
+- `./tests/server/controllers/suggestionController.test.ts`: Tests for suggestion generation
+- `./tests/server/routes/coriRoutes.test.ts`: Tests for API routes
+- `./tests/server/routes/excelPopulationRoutes.test.ts`: Tests for Excel data population routes
+
+## Implementation Status
+
+### Completed Features
+- ✅ Document vectorization and embedding generation
+- ✅ VoyageAI integration for high-quality multimodal embeddings
+- ✅ HTML content extraction and processing
+- ✅ Local fallback for embedding generation when API is unavailable
+- ✅ Basic semantic search functionality
+- ✅ Test suite for core functionality
+
+### In Progress
+- 🔄 Advanced context-aware data extraction
+- 🔄 UI refinements for better user experience
+- 🔄 Performance optimizations for large document sets
+
+### Planned Features
+- 📋 PDF content extraction improvements
+- 📋 Image content analysis
+- 📋 Multi-document relationship mapping
+- 📋 Advanced data visualization options
+
+## Configuration
+
+### Environment Variables
+Create a `.env` file in the root directory with the following variables:
+
+```
+VOYAGEAI_API_KEY=your_api_key_here
+USE_MULTIMODAL_EMBEDDINGS=true
+```
+
+## Troubleshooting
+
+If you have problems running the add-in, take these steps.
+
+- Close any open instances of Excel.
+- Close the previous web server started for the add-in with the **Stop Previewing Your Office Add-in** Office Add-ins Development Kit extension option.
+- Check that your VoyageAI API key is correctly set in the `.env` file.
+- Verify that the necessary npm packages are installed with `npm install`.
+
+If you still have problems, see [troubleshoot development errors](https://learn.microsoft.com//office/dev/add-ins/testing/troubleshoot-development-errors) or [create a GitHub issue](https://aka.ms/officedevkitnewissue) and we'll help you.  
+
+For information on running the add-in on Excel on the web, see [Sideload Office Add-ins to Office on the web](https://learn.microsoft.com/office/dev/add-ins/testing/sideload-office-add-ins-for-testing).
+
+## Make code changes
+
+All the information about Office Add-ins is found in our [official documentation](https://learn.microsoft.com/office/dev/add-ins/overview/office-add-ins). You can also explore more samples in the Office Add-ins Development Kit. Select **View Samples** to see more samples of real-world scenarios.
+
+If you edit the manifest as part of your changes, use the **Validate Manifest File** option in the Office Add-ins Development Kit. This shows you errors in the manifest syntax.
+
+## Copyright and License
+
+© Shreya Singh. All rights reserved.
+
+This software and its documentation are proprietary to Shreya Singh. The software is provided under a license agreement containing restrictions on use, duplication, disclosure, and is protected by intellectual property laws. This software may not be used, copied, distributed, modified, or disclosed to any third party without the express written permission of Shreya Singh.
