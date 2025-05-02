@@ -4,6 +4,7 @@
  */
 import { RangeDetectionResult, RangeInfo, RangeType, createRangeChunk, formatRangeId } from '../models/RangeModels';
 import { MetadataChunk, SheetState } from '../models/CommandModels';
+import { parseA1 } from '../utils/ExcelUtils';
 
 /**
  * Service to detect and analyze important ranges within sheets
@@ -34,11 +35,9 @@ export class RangeDetector {
       // Detect named ranges
       this.detectNamedRanges(sheet, ranges);
       
-      // Detect formula regions
-      this.detectFormulaRegions(sheet, ranges);
-      
-      // Detect key data regions
-      this.detectKeyDataRegions(sheet, ranges);
+      // (Formula and key data region detection disabled during initial testing)
+      // this.detectFormulaRegions(sheet, ranges);
+      // this.detectKeyDataRegions(sheet, ranges);
       
       // Generate chunk IDs for each range
       for (const range of ranges) {
@@ -181,6 +180,11 @@ export class RangeDetector {
     // Find regions with high formula density
     // Use the same approach as finding data regions, but for formulas
     this.findFormulaRegions(sheet, formulaMap, ranges);
+    if (!sheet.formulas || !Array.isArray(sheet.formulas)) {
+      return;
+    }
+    
+    // Simple implementation: find contiguous blocks of formulas
   }
   
   /**
@@ -639,15 +643,15 @@ export class RangeDetector {
    * @returns Object with row and column counts
    */
   private parseRangeDimensions(rangeA1: string): { rowCount: number, columnCount: number } {
-    const coords = this.parseRangeCoordinates(rangeA1);
-    
-    if (!coords) {
+    const parts = rangeA1.split(':');
+    if (parts.length !== 2) {
       return { rowCount: 0, columnCount: 0 };
     }
-    
+    const start = parseA1(parts[0].trim());
+    const end = parseA1(parts[1].trim());
     return {
-      rowCount: coords.endRow - coords.startRow + 1,
-      columnCount: coords.endCol - coords.startCol + 1
+      rowCount: end.row - start.row + 1,
+      columnCount: end.column - start.column + 1
     };
   }
   

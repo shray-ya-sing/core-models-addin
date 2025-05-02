@@ -339,6 +339,13 @@ export class SpreadsheetChunkCompressor {
   }
   
   /**
+   * Public wrapper for testing isKeyFormula
+   */
+  public test_isKeyFormula(formula: string): boolean {
+    return this.isKeyFormula(formula);
+  }
+
+  /**
    * Determine if a value is a key value (important for context)
    * @param value The value to check
    * @returns True if it's an important value
@@ -372,13 +379,17 @@ export class SpreadsheetChunkCompressor {
     if (typeof value === 'number') {
       // Include round numbers that might be significant
       if (value % 100 === 0 && value !== 0) return true;
-      if (value > 10000) return true;
-      
-      // Include percentages
-      if (value > 0 && value <= 1) return true;
+      if (value >= 10000) return true;
     }
     
     return false;
+  }
+
+  /**
+   * Public wrapper for testing isKeyValue
+   */
+  public test_isKeyValue(value: any): boolean {
+    return this.isKeyValue(value);
   }
   
   /**
