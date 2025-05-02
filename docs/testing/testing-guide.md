@@ -12,9 +12,9 @@ The add-in is currently in development with the following status:
 - ✅ **Question Answering**: The add-in can answer questions about financial models and their components
 - ✅ **Formula Explanation**: The add-in can explain complex formulas and their purpose
 - ❌ **Knowledge Base Integration**: External knowledge integration is not yet functional
-- ❌ **Command Execution**: Making modifications to the workbook is still a work in progress
+- ✅ **Command Execution**: The add-in can now make modifications to the workbook with 23 different operation types
 
-**Important**: At this stage, the add-in is best at "explaining" or "answering questions" about the workbook rather than making modifications. Please focus your testing on these explanation capabilities.
+**Important**: The add-in has been enhanced with command execution capabilities. Please test both explanation features and the new command execution operations listed below.
 
 ## How to Test
 
@@ -29,15 +29,16 @@ The add-in is currently in development with the following status:
 
 ## Testing Categories
 
-The testing is organized into three levels:
+The testing is organized into four levels:
 
 1. **Workbook-level**: Questions about the entire financial model
 2. **Worksheet-level**: Questions about specific worksheets
 3. **Cell Range-level**: Questions about specific cells or ranges
+4. **Command Execution**: Testing the add-in's ability to modify the workbook
 
 ## Test Cases
 
-Some sample questions that might be useful for testing the different scenarios are suggested below:
+Some sample questions that might be useful for testing the different scenarios are suggested below. For command execution, we've provided a comprehensive set of tests organized by operation type.
 
 ### Workbook-Level Questions
 
@@ -114,6 +115,82 @@ Some sample questions that might be useful for testing the different scenarios a
 | 19 | Explain how the pivot table in [range] summarizes the data. | | |
 | 20 | What would happen to [cell reference] if [another cell] changed? | | |
 
+### Command Execution Test Cases
+
+The following test cases are designed to validate the add-in's ability to execute various operations in Excel:
+
+#### Basic Cell Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Set cell A1 to 100 | | |
+| 2 | Add the formula =SUM(A1:A10) to cell A11 | | |
+| 3 | Copy range A1:B10 to C1 | | |
+| 4 | Clear the contents of range D1:D10 | | |
+
+#### Formatting Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Format range A1:B10 as currency with red font | | |
+| 2 | Add conditional formatting to highlight cells greater than 100 in range C1:C10 | | |
+| 3 | Merge cells D1:F1 | | |
+| 4 | Format range A1:A10 to be bold and center-aligned | | |
+
+#### Table and Range Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Create a table from data in range A1:D10 with headers | | |
+| 2 | Sort range A1:B10 by column A in ascending order | | |
+| 3 | Filter range A1:D10 to show only values greater than 50 in column B | | |
+| 4 | Add a comment to cell A1 saying "This is the starting value" | | |
+
+#### Worksheet Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Create a new worksheet called "Summary" | | |
+| 2 | Set Sheet1 as the active sheet | | |
+| 3 | Delete the worksheet named "Temp" | | |
+| 4 | Set worksheet zoom to 150% | | |
+
+#### Advanced Features
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Freeze panes at cell B3 | | |
+| 2 | Set print area to range A1:H20 on Sheet1 | | |
+| 3 | Create a column chart for data in range A1:B10 titled "Sales Report" | | |
+| 4 | Format the chart to have a blue background and no gridlines | | |
+
+#### Row and Column Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Set column B width to 15 | | |
+| 2 | Group rows 5 to 10 | | |
+| 3 | Hide column D | | |
+| 4 | Autofit rows 1 to 10 | | |
+
+#### Calculation Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Set calculation mode to manual | | |
+| 2 | Enable iterative calculation with 100 iterations | | |
+| 3 | Recalculate all worksheets | | |
+| 4 | Recalculate range A1:D10 | | |
+
+#### Multiple Operations
+
+| # | Test Query | Result (✅/⚠️/❌) | Feedback |
+|---|------------|-----------------|----------|
+| 1 | Create a new sheet called Data, add values 1-10 in column A, and create a sum formula in A11 | | |
+| 2 | Format range B1:B10 as percentage, add data validation to ensure values are between 0 and 100 | | |
+| 3 | Copy data from Sheet1!A1:D10 to Sheet2!A1, format as currency, and create a total row | | |
+| 4 | Create a scenario table analyzing cell B10 with input values from A1 | | |
+
 ## Testing Notes
 
 1. **Replace placeholders**: When using the test queries, replace placeholders like [Sheet Name], [range], or [cell reference] with actual values from your workbook.
@@ -125,6 +202,8 @@ Some sample questions that might be useful for testing the different scenarios a
 4. **Accuracy**: Pay special attention to whether the explanations are factually correct about the model.
 
 5. **Clarity**: Evaluate how clear and understandable the explanations are, especially for complex concepts.
+
+6. **Command execution**: For command tests, verify that the operations are performed correctly and as expected.
 
 ## Submitting Your Results
 
