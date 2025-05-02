@@ -4,7 +4,11 @@
 import { 
   ExcelOperation, 
   ExcelOperationType,
-  ExcelCommandPlan
+  ExcelCommandPlan,
+  CreateScenarioTableOperation,
+  SetRowColumnOptionsOperation,
+  SetCalculationOptionsOperation,
+  RecalculateRangesOperation
 } from '../models/ExcelOperationModels';
 import * as ExcelUtils from '../utils/ExcelUtils';
 
@@ -199,6 +203,9 @@ export class ClientExcelCommandInterpreter {
     
     try {
       switch (operation.op) {
+        case ExcelOperationType.SET_ROW_COLUMN_OPTIONS:
+          await this.executeSetRowColumnOptions(context, operation);
+          break;
         case ExcelOperationType.SET_VALUE:
           await this.executeSetValue(context, operation);
           break;
@@ -239,9 +246,6 @@ export class ClientExcelCommandInterpreter {
           await this.executeDeleteSheet(context, operation);
           break;
           
-        case ExcelOperationType.RENAME_SHEET:
-          await this.executeRenameSheet(context, operation);
-          break;
           
         case ExcelOperationType.COPY_RANGE:
           await this.executeCopyRange(context, operation);
@@ -263,56 +267,33 @@ export class ClientExcelCommandInterpreter {
           await this.executeAddComment(context, operation);
           break;
           
-        // Worksheet settings operations
-        case ExcelOperationType.SET_GRIDLINES:
-          await this.executeSetGridlines(context, operation);
-          break;
-          
-        case ExcelOperationType.SET_HEADERS:
-          await this.executeSetHeaders(context, operation);
-          break;
-          
-        case ExcelOperationType.SET_ZOOM:
-          await this.executeSetZoom(context, operation);
-          break;
-          
         case ExcelOperationType.SET_FREEZE_PANES:
           await this.executeSetFreezePanes(context, operation);
           break;
-          
-        case ExcelOperationType.SET_VISIBLE:
-          await this.executeSetVisible(context, operation);
-          break;
+
           
         case ExcelOperationType.SET_ACTIVE_SHEET:
           await this.executeSetActiveSheet(context, operation);
           break;
-          
-        // Print settings operations
-        case ExcelOperationType.SET_PRINT_AREA:
-          await this.executeSetPrintArea(context, operation);
+
+        case ExcelOperationType.SET_WORKSHEET_SETTINGS:
+          await this.executeSetWorksheetSettings(context, operation);
+          break;
+
+
+        // Print and page layout operations
+        case ExcelOperationType.SET_PRINT_SETTINGS:
+          await this.executeSetPrintSettings(context, operation);
           break;
           
-        case ExcelOperationType.SET_PRINT_ORIENTATION:
-          await this.executeSetPrintOrientation(context, operation);
-          break;
-          
-        case ExcelOperationType.SET_PRINT_MARGINS:
-          await this.executeSetPrintMargins(context, operation);
+        case ExcelOperationType.SET_PAGE_SETUP:
+          await this.executeSetPageSetup(context, operation);
           break;
           
         // Chart formatting operations
         case ExcelOperationType.FORMAT_CHART:
           await this.executeFormatChart(context, operation);
-          break;
-          
-        case ExcelOperationType.FORMAT_CHART_AXIS:
-          await this.executeFormatChartAxis(context, operation);
-          break;
-          
-        case ExcelOperationType.FORMAT_CHART_SERIES:
-          await this.executeFormatChartSeries(context, operation);
-          break;
+          break;          
           
         // Complex operations
         case ExcelOperationType.COMPOSITE_OPERATION:
@@ -321,6 +302,26 @@ export class ClientExcelCommandInterpreter {
           
         case ExcelOperationType.BATCH_OPERATION:
           await this.executeBatchOperation(context, operation);
+          break;
+          
+        case ExcelOperationType.EXPORT_TO_PDF:
+          await this.executeExportToPdf(context, operation);
+          break;
+          
+        case ExcelOperationType.CREATE_SCENARIO_TABLE:
+          await this.executeCreateScenarioTable(context, operation);
+          break;
+          
+        case ExcelOperationType.SET_ROW_COLUMN_OPTIONS:
+          await this.executeSetRowColumnOptions(context, operation);
+          break;
+
+        case ExcelOperationType.SET_CALCULATION_OPTIONS:
+          await this.executeSetCalculationOptions(context, operation);
+          break;
+
+        case ExcelOperationType.RECALCULATE_RANGES:
+          await this.executeRecalculateRanges(context, operation);
           break;
           
         default:
@@ -414,8 +415,14 @@ export class ClientExcelCommandInterpreter {
         case 'currency':
           formatString = '"$"#,##0.00';
           break;
-        case 'percentage':
+        case 'percentage_2_decimal':
           formatString = '0.00%';
+          break;
+        case 'percentage_1_decimal':
+          formatString = '0.0%';
+          break;
+        case 'percentage_0_decimal':
+          formatString = '0%';
           break;
         case 'date':
           formatString = 'm/d/yyyy';
@@ -429,8 +436,39 @@ export class ClientExcelCommandInterpreter {
         case 'text':
           formatString = '@';
           break;
+        case 'financial':
+          formatString = '_(* #,##0_);_(* (#,##0);_(* "-"??_);_(@_)';
+          break;
+        case 'financial_with_dollar':
+          formatString = '_($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)';
+          break;
+        case 'financial_with_euro':
+          formatString = '_(€* #,##0_);_(€* (#,##0);_(€* "-"??_);_(@_)';
+          break;
+        case 'financial_with_pound':
+          formatString = '_(£* #,##0_);_(£* (#,##0);_(£* "-"??_);_(@_)';
+          break;
+        case 'financial_with_yen':
+          formatString = '_(¥* #,##0_);_(¥* (#,##0);_(¥* "-"??_);_(@_)';
+          break;
+        case 'financial_with_rupee':
+          formatString = '_(₹* #,##0_);_(₹* (#,##0);_(₹* "-"??_);_(@_)';
+          break;
+        case 'financial_with_yen':
+          formatString = '_(¥* #,##0_);_(¥* (#,##0);_(¥* "-"??_);_(@_)';
+          break;
+        case 'projection_year':
+          formatString = '#"E"';
+          break;
+        case 'actual_year':
+          formatString = '#"A"';
+          break;
         default:
           formatString = op.style;
+      }
+
+      if(op.customNumberFormat){
+        formatString = op.customNumberFormat;
       }
       
       // Create a 2D array with the same format for all cells in the range
@@ -472,6 +510,12 @@ export class ClientExcelCommandInterpreter {
         case 'justify':
           format.horizontalAlignment = Excel.HorizontalAlignment.justify;
           break;
+        case 'distributed':
+          format.horizontalAlignment = Excel.HorizontalAlignment.distributed;
+          break;
+        case 'center_across_selection':
+          format.horizontalAlignment = Excel.HorizontalAlignment.centerAcrossSelection;
+          break;
       }
     }
     
@@ -489,8 +533,28 @@ export class ClientExcelCommandInterpreter {
         case 'justify':
           format.verticalAlignment = Excel.VerticalAlignment.justify;
           break;
+        case 'distributed':
+          format.verticalAlignment = Excel.VerticalAlignment.distributed;
+          break;
       }
     }
+
+    if(op.indent){
+      range.format.indentLevel = op.indent;
+    }
+
+    if(op.wrapText){
+      range.format.wrapText = op.wrapText;
+    }
+
+    if(op.shrinkToFit){
+      range.format.shrinkToFit = op.shrinkToFit;
+    }
+
+    if(op.textOrientation){
+      range.format.textOrientation = op.textOrientation;
+    }
+
   }
   
   /**
@@ -583,13 +647,7 @@ export class ClientExcelCommandInterpreter {
     context.workbook.worksheets.getItem(op.name).delete();
   }
   
-  /**
-   * Execute a RENAME_SHEET operation
-   */
-  private async executeRenameSheet(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    context.workbook.worksheets.getItem(op.oldName).name = op.newName;
-  }
+
   
   /**
    * Execute a COPY_RANGE operation
@@ -609,6 +667,7 @@ export class ClientExcelCommandInterpreter {
       false, // skipBlanks
       false  // transpose
     );
+    
   }
   
   /**
@@ -706,35 +765,6 @@ export class ClientExcelCommandInterpreter {
     context.workbook.comments.add(cellReference, op.text);
   }
 
-  /**
-   * Execute a SET_GRIDLINES operation
-   */
-  private async executeSetGridlines(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    
-    worksheet.showGridlines = op.display;
-  }
-
-  /**
-   * Execute a SET_HEADERS operation
-   */
-  private async executeSetHeaders(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    worksheet.showHeadings = op.display;
-  }
-
-  /**
-   * Execute a SET_ZOOM operation
-   */
-  private async executeSetZoom(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    
-    // Set zoom using pageLayout.zoom with a scale property
-    worksheet.pageLayout.zoom = { scale: op.zoomLevel };
-  }
 
   /**
    * Execute a SET_FREEZE_PANES operation
@@ -767,17 +797,28 @@ export class ClientExcelCommandInterpreter {
   }
 
   /**
-   * Execute a SET_VISIBLE operation
+   * Execute a FORMAT_CHART operation
    */
-  private async executeSetVisible(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+  private async executeSetWorksheetSettings(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
     const op = operation as any;
     const worksheet = context.workbook.worksheets.getItem(op.sheet);
+    worksheet.activate();
+    await context.sync();
     
     if (op.visible) {
       worksheet.visibility = Excel.SheetVisibility.visible;
     } else {
       worksheet.visibility = Excel.SheetVisibility.hidden;
     }
+
+    if (op.tabColor) {
+      worksheet.tabColor = op.tabColor;
+    }
+
+    if (op.name) {
+      worksheet.name = op.name;
+    }
+
   }
 
   /**
@@ -790,42 +831,6 @@ export class ClientExcelCommandInterpreter {
     worksheet.activate();
   }
 
-  /**
-   * Execute a SET_PRINT_AREA operation
-   */
-  private async executeSetPrintArea(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    
-    worksheet.pageLayout.setPrintArea(op.range);
-  }
-
-  /**
-   * Execute a SET_PRINT_ORIENTATION operation
-   */
-  private async executeSetPrintOrientation(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    
-    worksheet.pageLayout.orientation = 
-      op.orientation === 'landscape' ? Excel.PageOrientation.landscape : Excel.PageOrientation.portrait;
-  }
-
-  /**
-   * Execute a SET_PRINT_MARGINS operation
-   */
-  private async executeSetPrintMargins(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    const op = operation as any;
-    const worksheet = context.workbook.worksheets.getItem(op.sheet);
-    const pageLayout = worksheet.pageLayout;
-    
-    if (op.hasOwnProperty('top')) pageLayout.topMargin = op.top;
-    if (op.hasOwnProperty('right')) pageLayout.rightMargin = op.right;
-    if (op.hasOwnProperty('bottom')) pageLayout.bottomMargin = op.bottom;
-    if (op.hasOwnProperty('left')) pageLayout.leftMargin = op.left;
-    if (op.hasOwnProperty('header')) pageLayout.headerMargin = op.header;
-    if (op.hasOwnProperty('footer')) pageLayout.footerMargin = op.footer;
-  }
 
   /**
    * Execute a FORMAT_CHART operation
@@ -836,21 +841,132 @@ export class ClientExcelCommandInterpreter {
     
     // Get the chart
     let chart: Excel.Chart;
-    if (op.chartName) {
-      chart = worksheet.charts.getItem(op.chartName);
+    if (op.chartName || op.chart) {
+      // Support both schema's "chart" and interface's "chartName"
+      chart = worksheet.charts.getItem(op.chartName || op.chart);
     } else if (op.chartIndex !== undefined) {
       chart = worksheet.charts.getItemAt(op.chartIndex);
     } else {
-      throw new Error('Either chartName or chartIndex must be specified');
+      throw new Error('Either chartName/chart or chartIndex must be specified');
     }
     
-    // Apply formatting
+    // Apply data source if specified
+    if (op.dataSource) {
+      const dataRange = worksheet.getRange(op.dataSource);
+      chart.setData(dataRange);
+    }
+    
+    // Chart type
+    if (op.hasOwnProperty('chartType') || op.hasOwnProperty('type')) {
+      chart.chartType = op.chartType || op.type;
+    }
+    
+    if (op.hasOwnProperty('chartSubType')) {
+      // This would need mapping to Office.js API depending on available sub-types
+    }
+    
+    if (op.hasOwnProperty('chartGroup')) {
+      // This would need mapping to Office.js API depending on available groups
+    }
+    
+    // Chart position and size
+    if (op.hasOwnProperty('height')) {
+      chart.height = op.height;
+    }
+    
+    if (op.hasOwnProperty('width')) {
+      chart.width = op.width;
+    }
+    
+    if (op.hasOwnProperty('left')) {
+      chart.left = op.left;
+    }
+    
+    if (op.hasOwnProperty('top')) {
+      chart.top = op.top;
+    }
+    
+    if (op.hasOwnProperty('style')) {
+      chart.style = op.style;
+    }
+    
+    // Chart fill
+    if (op.hasOwnProperty('fillColor')) {
+      chart.format.fill.setSolidColor(op.fillColor);
+    }
+    
+    if (op.hasOwnProperty('hasFill') && !op.hasFill) {
+      chart.format.fill.clear();
+    }
+    
+    // Chart border
+    if (op.hasOwnProperty('hasBorder')) {
+      // @ts-ignore: Property may exist at runtime but not in type definitions
+      chart.format.border.visible = op.hasBorder;
+    }
+    
+    if (op.hasOwnProperty('borderColor')) {
+      chart.format.border.color = op.borderColor;
+    }
+    
+    if (op.hasOwnProperty('borderWeight')) {
+      chart.format.border.weight = op.borderWeight;
+    }
+    
+    if (op.hasOwnProperty('borderStyle')) {
+      // Would need mapping to Excel.BorderLineStyle enum
+      // Example: chart.format.border.lineStyle = Excel.BorderLineStyle.continuous;
+    }
+    
+    if (op.hasOwnProperty('borderDashStyle')) {
+      // Would need mapping to Excel.BorderDashStyle enum
+      // Example: chart.format.border.dashStyle = Excel.BorderDashStyle.dash;
+    }
+    
+    // Chart title properties
     if (op.hasOwnProperty('title')) {
       chart.title.text = op.title;
     }
     
+    if (op.hasOwnProperty('hasTitle')) {
+      chart.title.visible = op.hasTitle;
+    }
+    
+    if (op.hasOwnProperty('titleVisible')) {
+      chart.title.visible = op.titleVisible;
+    }
+    
+    if (op.hasOwnProperty('titleColor')) {
+      chart.title.format.font.color = op.titleColor;
+    }
+    
+    if (op.hasOwnProperty('titleFontName')) {
+      chart.title.format.font.name = op.titleFontName;
+    }
+    
+    if (op.hasOwnProperty('titleFontSize')) {
+      chart.title.format.font.size = op.titleFontSize;
+    }
+    
+    if (op.hasOwnProperty('titleFontBold')) {
+      chart.title.format.font.bold = op.titleFontBold;
+    }
+    
+    if (op.hasOwnProperty('titleFontItalic')) {
+      chart.title.format.font.italic = op.titleFontItalic;
+    }
+    
+    if (op.hasOwnProperty('titlePosition')) {
+      // Would need mapping to Office.js position enum if available
+    }
+    
+    // Legend properties
     if (op.hasOwnProperty('hasLegend')) {
       chart.legend.visible = op.hasLegend;
+    }
+    
+    if (op.hasOwnProperty('legendVisible')) {
+      chart.legend.visible = op.legendVisible;
     }
     
     if (op.hasOwnProperty('legendPosition')) {
@@ -873,90 +989,601 @@ export class ClientExcelCommandInterpreter {
       }
     }
     
-    if (op.hasOwnProperty('height')) {
-      chart.height = op.height;
+    if (op.hasOwnProperty('legendColor')) {
+      chart.legend.format.font.color = op.legendColor;
     }
     
-    if (op.hasOwnProperty('width')) {
-      chart.width = op.width;
+    if (op.hasOwnProperty('legendFontName')) {
+      chart.legend.format.font.name = op.legendFontName;
     }
     
-    if (op.hasOwnProperty('style')) {
-      chart.style = op.style;
+    if (op.hasOwnProperty('legendFontSize')) {
+      chart.legend.format.font.size = op.legendFontSize;
+    }
+    
+    if (op.hasOwnProperty('legendFontBold')) {
+      chart.legend.format.font.bold = op.legendFontBold;
+    }
+    
+    if (op.hasOwnProperty('legendFontItalic')) {
+      chart.legend.format.font.italic = op.legendFontItalic;
+    }
+    
+    // Axis properties
+    // Get the axis if axis type is specified
+    if (op.hasOwnProperty('axisType')) {
+      let axis: Excel.ChartAxis;
+      
+      // Use the getItem method to get the specific axis by type and group
+      if (op.axisType === 'category') {
+        // For category axis
+        axis = chart.axes.getItem(
+          Excel.ChartAxisType.category, 
+          op.axisGroup === 'secondary' ? Excel.ChartAxisGroup.secondary : Excel.ChartAxisGroup.primary
+        );
+      } else if (op.axisType === 'value') {
+        // For value axis
+        axis = chart.axes.getItem(
+          Excel.ChartAxisType.value, 
+          op.axisGroup === 'secondary' ? Excel.ChartAxisGroup.secondary : Excel.ChartAxisGroup.primary
+        );
+      } else if (op.axisType === 'series') {
+        // For series axis (3D charts)
+        axis = chart.axes.getItem(
+          Excel.ChartAxisType.series, 
+          op.axisGroup === 'secondary' ? Excel.ChartAxisGroup.secondary : Excel.ChartAxisGroup.primary
+        );
+      }
+      
+      // Apply axis properties
+      if (axis) {
+        if (op.hasOwnProperty('title') && op.hasOwnProperty('hasTitle')) {
+          axis.title.text = op.title;
+          axis.title.visible = op.hasTitle;
+        }
+        
+        if (op.hasOwnProperty('axisVisible')) {
+          axis.visible = op.axisVisible;
+        }
+        
+        if (op.hasOwnProperty('axisFontName')) {
+          axis.format.font.name = op.axisFontName;
+        }
+        
+        if (op.hasOwnProperty('axisFontSize')) {
+          axis.format.font.size = op.axisFontSize;
+        }
+        
+        if (op.hasOwnProperty('axisFontBold')) {
+          axis.format.font.bold = op.axisFontBold;
+        }
+        
+        if (op.hasOwnProperty('axisFontItalic')) {
+          axis.format.font.italic = op.axisFontItalic;
+        }
+        
+        if (op.hasOwnProperty('axisFontColor')) {
+          axis.format.font.color = op.axisFontColor;
+        }
+        
+        if (op.hasOwnProperty('showMajorGridlines')) {
+          axis.majorGridlines.visible = op.showMajorGridlines;
+        }
+        
+        if (op.hasOwnProperty('showMinorGridlines')) {
+          axis.minorGridlines.visible = op.showMinorGridlines;
+        }
+        
+        if (op.hasOwnProperty('majorUnit')) {
+          axis.majorUnit = op.majorUnit;
+        }
+        
+        if (op.hasOwnProperty('minorUnit')) {
+          axis.minorUnit = op.minorUnit;
+        }
+        
+        if (op.hasOwnProperty('minimum')) {
+          axis.minimum = op.minimum;
+        }
+        
+        if (op.hasOwnProperty('maximum')) {
+          axis.maximum = op.maximum;
+        }
+        
+        if (op.hasOwnProperty('displayUnit')) {
+          // Would need mapping to Excel.ChartAxisDisplayUnit enum
+        }
+        
+        if (op.hasOwnProperty('logScale')) {
+          axis.scaleType = Excel.ChartAxisScaleType.logarithmic;
+          axis.logBase = op.logBase ?? 10; // optional numeric base
+        }
+        
+        if (op.hasOwnProperty('reversed')) {
+          // Reverse the axis direction
+          // @ts-ignore: Property may exist at runtime but not in type definitions
+          (axis as any).reversed = op.reversed;
+        }
+        
+        if (op.hasOwnProperty('tickLabelPosition')) {
+          // Would need mapping to Excel.ChartAxisTickLabelPosition enum
+        }
+        
+        if (op.hasOwnProperty('tickMarkType')) {
+          // Would need mapping to Excel.ChartAxisTickMark enum
+        }
+      }
+    }
+    
+    // Series properties
+    if (op.hasOwnProperty('seriesName') || op.hasOwnProperty('seriesIndex')) {
+      let series: Excel.ChartSeries;
+      
+      if (op.seriesName) {
+        // Get series by name if available in Office.js API
+        // This might not be directly available - might need to iterate
+        const seriesCollection = chart.series;
+        // Potential implementation to find by name would go here
+      } else if (op.seriesIndex !== undefined) {
+        series = chart.series.getItemAt(op.seriesIndex);
+      }
+      
+      if (series) {
+        if (op.hasOwnProperty('seriesVisible')) {
+          // May not be directly available in Office.js API
+        }
+        
+        if (op.hasOwnProperty('lineColor')) {
+          series.format.line.color = op.lineColor;
+        }
+        
+        if (op.hasOwnProperty('lineWeight')) {
+          series.format.line.weight = op.lineWeight;
+        }
+        
+        if (op.hasOwnProperty('markerStyle')) {
+          // Would need mapping to Excel.ChartMarkerStyle enum
+          // series.markerStyle = op.markerStyle;
+        }
+        
+        if (op.hasOwnProperty('markerSize')) {
+          series.markerSize = op.markerSize;
+        }
+        
+        if (op.hasOwnProperty('markerColor')) {
+          // May need to access through format property
+        }
+        
+        if (op.hasOwnProperty('seriesFillColor')) {
+          series.format.fill.setSolidColor(op.seriesFillColor);
+        }
+        
+        if (op.hasOwnProperty('transparency')) {
+          // May need conversion to Office.js transparency format
+        }
+        
+        if (op.hasOwnProperty('plotOrder')) {
+          // May not be directly available in Office.js API
+        }
+        
+        if (op.hasOwnProperty('gapWidth')) {
+          // For certain chart types only
+          if (chart.chartType.includes('column') || chart.chartType.includes('bar')) {
+            // series.gapWidth = op.gapWidth;
+          }
+        }
+        
+        if (op.hasOwnProperty('gapDepth')) {
+          // For 3D charts only
+        }
+      }
+    }
+    
+    // Data point properties
+    if (op.hasOwnProperty('seriesIndex') && op.hasOwnProperty('pointIndex')) {
+      const series = chart.series.getItemAt(op.seriesIndex);
+      if (series && series.points) {
+        const point = series.points.getItemAt(op.pointIndex);
+        
+        if (point) {
+          if (op.hasOwnProperty('dataPointVisible')) {
+            // May not be directly available in Office.js API
+          }
+          
+          if (op.hasOwnProperty('daatPointfillColor')) { // Note the typo in interface
+            point.format.fill.setSolidColor(op.daatPointfillColor);
+          }
+          
+          if (op.hasOwnProperty('dataPointborderColor')) {
+            point.format.border.color = op.dataPointborderColor;
+          }
+          
+          if (op.hasOwnProperty('dataPointborderWeight')) {
+            point.format.border.weight = op.dataPointborderWeight;
+          }
+          
+          if (op.hasOwnProperty('visible')) {
+            try {
+              // Attempt to set border visibility - this property may only exist in some Excel versions
+              // @ts-ignore: Property may exist at runtime but not in type definitions
+              (chart as any).border.visible = op.visible;
+            } catch (e) {
+              console.warn(`Could not set chart border visibility: ${e}`);
+            }
+          }
+          
+          if (op.hasOwnProperty('explosive')) {
+            // For pie/doughnut charts
+            // point.explosive = op.explosive;
+          }
+          
+          if (op.hasOwnProperty('marker') && op.marker) {
+            if (op.marker.style) {
+              // Would need mapping to Excel.ChartMarkerStyle enum
+            }
+            
+            if (op.marker.size) {
+              point.markerSize = op.marker.size;
+            }
+            
+            if (op.marker.color) {
+              // May need to access through format property
+            }
+          }
+        }
+      }
+    }
+    
+    // Data label properties
+    if (op.hasOwnProperty('dataLabelVisible') || op.hasOwnProperty('dataLabels')) {
+      chart.dataLabels.showValue = op.dataLabelVisible || op.dataLabels;
+      
+      if (op.hasOwnProperty('dataLabelPosition')) {
+        // Would need mapping to Excel.ChartDataLabelPosition enum
+        // chart.dataLabels.position = Excel.ChartDataLabelPosition[op.dataLabelPosition];
+      }
+      
+      if (op.hasOwnProperty('dataLabelFontName')) {
+        chart.dataLabels.format.font.name = op.dataLabelFontName;
+      }
+      
+      if (op.hasOwnProperty('dataLabelFontSize')) {
+        chart.dataLabels.format.font.size = op.dataLabelFontSize;
+      }
+      
+      if (op.hasOwnProperty('dataLabelFontBold')) {
+        chart.dataLabels.format.font.bold = op.dataLabelFontBold;
+      }
+      
+      if (op.hasOwnProperty('dataLabelFontItalic')) {
+        chart.dataLabels.format.font.italic = op.dataLabelFontItalic;
+      }
+      
+      if (op.hasOwnProperty('dataLabelFontColor')) {
+        chart.dataLabels.format.font.color = op.dataLabelFontColor;
+      }
+      
+      if (op.hasOwnProperty('dataLabelFormat')) {
+        chart.dataLabels.numberFormat = op.dataLabelFormat;
+      }
+      
+      if (op.hasOwnProperty('dataLabelSeparator')) {
+        chart.dataLabels.separator = op.dataLabelSeparator;
+      }
+      
+      if (op.hasOwnProperty('dataLabelShowCategoryName')) {
+        chart.dataLabels.showCategoryName = op.dataLabelShowCategoryName;
+      }
+      
+      if (op.hasOwnProperty('dataLabelShowSeriesName')) {
+        chart.dataLabels.showSeriesName = op.dataLabelShowSeriesName;
+      }
+      
+      if (op.hasOwnProperty('dataLabelShowValue')) {
+        chart.dataLabels.showValue = op.dataLabelShowValue;
+      }
+      
+      if (op.hasOwnProperty('dataLabelShowPercentage')) {
+        chart.dataLabels.showPercentage = op.dataLabelShowPercentage;
+      }
+      
+      if (op.hasOwnProperty('dataLabelShowBubbleSize')) {
+        chart.dataLabels.showBubbleSize = op.dataLabelShowBubbleSize;
+      }
+    }
+  }
+
+
+  /**
+   * Execute a SET_PRINT_SETTINGS operation
+   */
+  private async executeSetPrintSettings(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    const op = operation as any;
+    const worksheet = context.workbook.worksheets.getItem(op.sheet);
+    const pageLayout = worksheet.pageLayout;
+    
+    // Print area settings
+    if (op.hasOwnProperty('printAreas') && Array.isArray(op.printAreas) && op.printAreas.length > 0) {
+      // Join multiple areas with commas if there are multiple areas
+      const printArea = op.printAreas.join(',');
+      pageLayout.setPrintArea(printArea);
+    }
+    
+    
+    // Print orientation
+    if (op.hasOwnProperty('orientation')) {
+      pageLayout.orientation = 
+        op.orientation === 'landscape' ? Excel.PageOrientation.landscape : Excel.PageOrientation.portrait;
+    }
+    
+    // Print margins
+    if (op.hasOwnProperty('topMargin')) pageLayout.topMargin = op.topMargin;
+    if (op.hasOwnProperty('rightMargin')) pageLayout.rightMargin = op.rightMargin;
+    if (op.hasOwnProperty('bottomMargin')) pageLayout.bottomMargin = op.bottomMargin;
+    if (op.hasOwnProperty('leftMargin')) pageLayout.leftMargin = op.leftMargin;
+    if (op.hasOwnProperty('headerMargin')) pageLayout.headerMargin = op.headerMargin;
+    if (op.hasOwnProperty('footerMargin')) pageLayout.footerMargin = op.footerMargin;
+    
+    // Print scaling
+    if (op.hasOwnProperty('scale') || op.hasOwnProperty('fitToWidth') || op.hasOwnProperty('fitToHeight')) {
+      const zoomSettings: any = {};
+      
+      if (op.hasOwnProperty('scale')) {
+        zoomSettings.scale = op.scale;
+      }
+      
+      if (op.hasOwnProperty('fitToWidth')) {
+        zoomSettings.horizontalFitToPages = op.fitToWidth;
+      }
+      
+      if (op.hasOwnProperty('fitToHeight')) {
+        zoomSettings.verticalFitToPages = op.fitToHeight;
+      }
+      
+      pageLayout.zoom = zoomSettings;
+    }
+    
+    // Print titles
+    if (op.hasOwnProperty('printTitles') && Array.isArray(op.printTitles)) {
+      // Assume first item is rows, second is columns if both are provided
+      if (op.printTitles.length > 0) {
+        pageLayout.setPrintTitleRows(op.printTitles[0]);
+      }
+      
+      if (op.printTitles.length > 1) {
+        pageLayout.setPrintTitleColumns(op.printTitles[1]);
+      }
+    }
+    
+    // Black and white printing
+    if (op.hasOwnProperty('blackAndWhite')) {
+      pageLayout.blackAndWhite = op.blackAndWhite;
+    }
+    
+    // Draft mode
+    if (op.hasOwnProperty('draftMode')) {
+      pageLayout.draftMode = op.draftMode;
+    }
+    
+    // Print gridlines
+    if (op.hasOwnProperty('printGridlines')) {
+      pageLayout.printGridlines = op.printGridlines;
+    }
+    
+    // Print headings
+    if (op.hasOwnProperty('headings')) {
+      pageLayout.printHeadings = op.headings;
+    }
+    
+    // Print order
+    if (op.hasOwnProperty('printOrder')) {
+      pageLayout.printOrder = 
+        op.printOrder === 'over_then_down' ? Excel.PrintOrder.overThenDown : Excel.PrintOrder.downThenOver;
+    }
+    
+    // Paper size
+    if (op.hasOwnProperty('paperSize')) {
+      // Map common paper size names to Excel.PaperType enum values
+      const paperSizeMap: { [key: string]: Excel.PaperType } = {
+        'letter': Excel.PaperType.letter,
+        'legal': Excel.PaperType.legal,
+        'a3': Excel.PaperType.a3,
+        'a4': Excel.PaperType.a4,
+        'a5': Excel.PaperType.a5,
+        'b4': Excel.PaperType.b4,
+        'b5': Excel.PaperType.b5,
+        'executive': Excel.PaperType.executive,
+        'tabloid': Excel.PaperType.tabloid,
+        'statement': Excel.PaperType.statement,
+        'envelope10': Excel.PaperType.envelope10,
+        'envelopeMonarch': Excel.PaperType.envelopeMonarch,
+        'quatro': Excel.PaperType.quatro // Note: correct spelling is 'quatro' not 'quarto'
+      };
+      
+      const paperSize = paperSizeMap[op.paperSize.toLowerCase()] || Excel.PaperType.letter;
+      pageLayout.paperSize = paperSize;
+    }
+    
+    // First page number
+    if (op.hasOwnProperty('firstPageNumber')) {
+      pageLayout.firstPageNumber = op.firstPageNumber;
+    }
+    
+    // Print comments
+    if (op.hasOwnProperty('printComments')) {
+      // Map printStyle to Excel.PrintComments enum
+      const printCommentsMap: { [key: string]: Excel.PrintComments } = {
+        'none': Excel.PrintComments.noComments,
+        'at_end': Excel.PrintComments.endSheet,
+        'as_displayed': Excel.PrintComments.inPlace // Using inPlace instead of displayed
+      };
+      
+      const commentSetting = printCommentsMap[op.printComments] || Excel.PrintComments.noComments;
+      pageLayout.printComments = commentSetting;
+    }
+    
+    // Center on page
+    if (op.hasOwnProperty('centerHorizontally')) {
+      pageLayout.centerHorizontally = op.centerHorizontally;
+    }
+    
+    if (op.hasOwnProperty('centerVertically')) {
+      pageLayout.centerVertically = op.centerVertically;
+    }
+    
+    // Headers and footers
+    if (op.hasOwnProperty('leftHeader') || op.hasOwnProperty('centerHeader') || op.hasOwnProperty('rightHeader')) {
+      try {
+        // Access the headers for different page types
+        const headersFooters = pageLayout.headersFooters;
+        
+        if (op.hasOwnProperty('leftHeader')) {
+          // Set left header for all page types
+          // Access the headers using the appropriate Office.js API
+          try {
+            // Try different approaches to set headers based on the Office.js version
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.leftHeader = op.leftHeader;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.leftHeader = op.leftHeader;
+            if (headersFooters.firstPage) headersFooters.firstPage.leftHeader = op.leftHeader;
+            if (headersFooters.evenPages) headersFooters.evenPages.leftHeader = op.leftHeader;
+          } catch (error) {
+            console.warn('Error setting left header:', error);
+          }
+        }
+        
+        if (op.hasOwnProperty('centerHeader')) {
+          // Set center header for all page types
+          try {
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.centerHeader = op.centerHeader;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.centerHeader = op.centerHeader;
+            if (headersFooters.firstPage) headersFooters.firstPage.centerHeader = op.centerHeader;
+            if (headersFooters.evenPages) headersFooters.evenPages.centerHeader = op.centerHeader;
+          } catch (error) {
+            console.warn('Error setting center header:', error);
+          }
+        }
+        
+        if (op.hasOwnProperty('rightHeader')) {
+          // Set right header for all page types
+          try {
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.rightHeader = op.rightHeader;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.rightHeader = op.rightHeader;
+            if (headersFooters.firstPage) headersFooters.firstPage.rightHeader = op.rightHeader;
+            if (headersFooters.evenPages) headersFooters.evenPages.rightHeader = op.rightHeader;
+          } catch (error) {
+            console.warn('Error setting right header:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Error setting headers:', error);
+      }
+    }
+    
+    if (op.hasOwnProperty('leftFooter') || op.hasOwnProperty('centerFooter') || op.hasOwnProperty('rightFooter')) {
+      try {
+        // Access the footers for different page types
+        const headersFooters = pageLayout.headersFooters;
+        
+        if (op.hasOwnProperty('leftFooter')) {
+          // Set left footer for all page types
+          try {
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.leftFooter = op.leftFooter;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.leftFooter = op.leftFooter;
+            if (headersFooters.firstPage) headersFooters.firstPage.leftFooter = op.leftFooter;
+            if (headersFooters.evenPages) headersFooters.evenPages.leftFooter = op.leftFooter;
+          } catch (error) {
+            console.warn('Error setting left footer:', error);
+          }
+        }
+        
+        if (op.hasOwnProperty('centerFooter')) {
+          // Set center footer for all page types
+          try {
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.centerFooter = op.centerFooter;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.centerFooter = op.centerFooter;
+            if (headersFooters.firstPage) headersFooters.firstPage.centerFooter = op.centerFooter;
+            if (headersFooters.evenPages) headersFooters.evenPages.centerFooter = op.centerFooter;
+          } catch (error) {
+            console.warn('Error setting center footer:', error);
+          }
+        }
+        
+        if (op.hasOwnProperty('rightFooter')) {
+          // Set right footer for all page types
+          try {
+            if(headersFooters.defaultForAllPages){
+              headersFooters.defaultForAllPages.rightFooter = op.rightFooter;
+            }
+            if (headersFooters.oddPages) headersFooters.oddPages.rightFooter = op.rightFooter;
+            if (headersFooters.firstPage) headersFooters.firstPage.rightFooter = op.rightFooter;
+            if (headersFooters.evenPages) headersFooters.evenPages.rightFooter = op.rightFooter;
+          } catch (error) {
+            console.warn('Error setting right footer:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Error setting footers:', error);
+      }
     }
   }
 
   /**
-   * Execute a FORMAT_CHART_AXIS operation
+   * Execute a SET_PAGE_SETUP operation
    */
-  private async executeFormatChartAxis(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+  private async executeSetPageSetup(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
     const op = operation as any;
     const worksheet = context.workbook.worksheets.getItem(op.sheet);
     
-    // Get the chart
-    let chart: Excel.Chart;
-    if (op.chartName) {
-      chart = worksheet.charts.getItem(op.chartName);
-    } else if (op.chartIndex !== undefined) {
-      chart = worksheet.charts.getItemAt(op.chartIndex);
-    } else {
-      throw new Error('Either chartName or chartIndex must be specified');
-    }
-    
-    // Get the axis
-    let axis: Excel.ChartAxis;
-    
-    // Use the getItem method to get the specific axis by type and group
-    if (op.axisType === 'category') {
-      // For category axis
-      axis = chart.axes.getItem(
-        Excel.ChartAxisType.category, 
-        op.axisGroup === 'secondary' ? Excel.ChartAxisGroup.secondary : Excel.ChartAxisGroup.primary
-      );
-    } else {
-      // For value axis
-      axis = chart.axes.getItem(
-        Excel.ChartAxisType.value, 
-        op.axisGroup === 'secondary' ? Excel.ChartAxisGroup.secondary : Excel.ChartAxisGroup.primary
-      );
-    }
+    try {
+      // Set zoom level
+      if (op.hasOwnProperty('zoom')) {
+        // Set zoom using pageLayout.zoom with a scale property
+        worksheet.pageLayout.zoom = { scale: op.zoom };
 
-    
-    // Apply formatting
-    if (op.hasOwnProperty('title') && op.hasOwnProperty('hasTitle')) {
-      axis.title.text = op.title;
-      axis.title.visible = op.hasTitle;
+        await context.sync();
+        
+        // Note: Setting zoom may require different approach depending on Office.js version
+        console.log(`Setting zoom level to ${op.zoom}%`);
+      }
+      
+      // Set gridlines visibility
+      if (op.hasOwnProperty('gridlines')) {
+        worksheet.showGridlines = op.gridlines;
+      }
+      
+      // Set headers visibility
+      if (op.hasOwnProperty('headers')) {
+        worksheet.showHeadings = op.headers;
+      }
+      
+      // Set page layout view
+      if (op.hasOwnProperty('pageLayoutView')) {
+        if (op.pageLayoutView === 'print') {
+          worksheet.activate();
+          // Use the correct method to show print preview
+          // Note: This may vary depending on Office.js version
+          try {
+            // Try to use the Office UI namespace if available
+            Office.context.ui.displayDialogAsync('https://outlook.office.com/mail/printview', 
+              { height: 80, width: 80, displayInIframe: true });
+          } catch (error) {
+            console.error('Unable to display print preview:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error setting page setup:', error);
     }
-    
-    if (op.hasOwnProperty('showMajorGridlines')) {
-      axis.majorGridlines.visible = op.showMajorGridlines;
-    }
-    
-    if (op.hasOwnProperty('showMinorGridlines')) {
-      axis.minorGridlines.visible = op.showMinorGridlines;
-    }
-    
-    if (op.hasOwnProperty('majorUnit')) {
-      axis.majorUnit = op.majorUnit;
-    }
-    
-    if (op.hasOwnProperty('minorUnit')) {
-      axis.minorUnit = op.minorUnit;
-    }
-    
-    if (op.hasOwnProperty('minimum')) {
-      axis.minimum = op.minimum;
-    }
-    
-    if (op.hasOwnProperty('maximum')) {
-      axis.maximum = op.maximum;
-    }
-    
-    if (op.hasOwnProperty('logScale')) {
-      axis.scaleType = Excel.ChartAxisScaleType.logarithmic;
-      axis.logBase   = op.logBase ?? 10;       // optional numeric base
-    } 
-
   }
 
   /**
@@ -1048,4 +1675,589 @@ export class ClientExcelCommandInterpreter {
       await context.sync();
     }
   }
+  
+  /**
+   * Execute an EXPORT_TO_PDF operation
+   */
+  private async executeExportToPdf(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    const op = operation as any;
+    const worksheet = context.workbook.worksheets.getItem(op.sheet);
+    
+    try {
+      // Activate the worksheet to ensure it's the active one for export
+      worksheet.activate();
+      await context.sync();      
+      
+      
+      // Export to PDF
+      // Note: The exact implementation depends on the Office.js version and platform
+      // This is a general approach that may need adaptation
+      
+      console.log(`Preparing to export worksheet ${op.sheet} to PDF`);
+      
+      // Use the Office.js API to export to PDF
+      // Since the exact API varies by Office.js version, we'll implement a few approaches
+      
+      // First, check if we're in a context where we can use the Office UI to save as PDF
+      try {
+        // Approach 1: Use the Office UI dialog to save as PDF
+        // This is the most widely supported approach across different Office versions
+        console.log('Attempting to export using Office UI...');
+        
+        // Set up the worksheet for printing
+        await context.sync();
+        
+        // Use the Office UI to show the save dialog
+        // Note: This will prompt the user to save the file
+        Office.context.ui.displayDialogAsync(
+          'https://appsforoffice.microsoft.com/lib/1.1/hosted/office-js/pdf-dialog.html',
+          { height: 50, width: 50, displayInIframe: true },
+        );
+      } catch (error) {
+        console.error('Error exporting to PDF:', error);
+      }
+    }
+    catch (error) {
+      console.error('Error exporting to PDF:', error);
+    }
+  }
+
+  /**
+   * Execute a CREATE_SCENARIO_TABLE operation
+   */
+
+  private async executeCreateScenarioTable(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    const op = operation as CreateScenarioTableOperation;
+    
+    // Get the target range for the scenario table
+    const { sheet: sheetName, address: rangeAddress } = this.parseReference(op.range);
+    const worksheet = context.workbook.worksheets.getItem(sheetName);
+    const tableRange = worksheet.getRange(rangeAddress);
+    
+    // Get references to formula and input cells
+    const { sheet: formulaSheet, address: formulaAddress } = this.parseReference(op.formulaCell);
+    const formulaCell = context.workbook.worksheets.getItem(formulaSheet).getRange(formulaAddress);
+    
+    const { sheet: inputSheet, address: inputAddress } = this.parseReference(op.inputCell);
+    const inputCell = context.workbook.worksheets.getItem(inputSheet).getRange(inputAddress);
+    
+    // Load current values
+    formulaCell.load("formulas, values");
+    inputCell.load("values");
+    await context.sync();
+    
+    const originalInputValue = inputCell.values[0][0];
+    const formulaValue = formulaCell.values[0][0];
+    const hasFormula = typeof formulaCell.formulas[0][0] === "string" && 
+                       formulaCell.formulas[0][0].toString().startsWith("=");
+    
+    // Get the formula text (for potential display)
+    const formulaText = hasFormula ? formulaCell.formulas[0][0].toString() : "";
+    
+    // Determine if it's a one-way or two-way table
+    const isOneWay = !op.tableType || op.tableType === 'one-way';
+    
+    let rowInputSheet = "";
+    let rowInputAddress = "";
+    let originalRowInputValue: any = null;
+    let rowInputCell: Excel.Range | null = null;
+    
+    // For two-way tables, get the row input cell information
+    if (!isOneWay) {
+      // Set up two-way table
+      if (!op.rowInputCell || !op.rowValues || op.rowValues.length === 0) {
+        throw new Error("Two-way scenario table requires rowInputCell and rowValues");
+      }
+      
+      const rowCellInfo = this.parseReference(op.rowInputCell);
+      rowInputSheet = rowCellInfo.sheet;
+      rowInputAddress = rowCellInfo.address;
+      rowInputCell = context.workbook.worksheets.getItem(rowInputSheet).getRange(rowInputAddress);
+      
+      rowInputCell.load("values");
+      await context.sync();
+      
+      originalRowInputValue = rowInputCell.values[0][0];
+    }
+    
+    if (isOneWay) {
+      // Set up one-way table
+      await this.createOneWayScenarioTable(
+        context, 
+        tableRange, 
+        formulaCell, 
+        inputCell, 
+        op.values, 
+        formulaText, 
+        op.format,
+        op.includeFormula || false
+      );
+    } else if (rowInputCell) {
+      await this.createTwoWayScenarioTable(
+        context,
+        tableRange,
+        formulaCell,
+        inputCell,
+        rowInputCell,
+        op.values,
+        op.rowValues!,
+        op.format,
+        op.includeFormula || false,
+        formulaText
+      );
+    }
+    
+    // Run scenarios if requested
+    if (op.runScenarios) {
+      await this.runScenariosForTable(
+        context,
+        isOneWay,
+        inputCell,
+        isOneWay ? null : rowInputCell,
+        op.values,
+        isOneWay ? null : op.rowValues
+      );
+    }
+    
+    // Restore original input values
+    inputCell.values = [[originalInputValue]];
+    if (!isOneWay && rowInputCell) {
+      rowInputCell.values = [[originalRowInputValue]];
+    }
+    
+    await context.sync();
+  }
+  
+  /**
+   * Create a one-way scenario table
+   */
+  private async createOneWayScenarioTable(
+    context: Excel.RequestContext,
+    tableRange: Excel.Range,
+    formulaCell: Excel.Range,
+    inputCell: Excel.Range,
+    values: (string | number)[],
+    formulaText: string,
+    format?: { headerFormatting?: boolean, resultFormatting?: string, tableStyle?: string },
+    includeFormula: boolean = false
+  ): Promise<void> {
+    // Load table dimensions
+    tableRange.load("rowCount, columnCount");
+    await context.sync();
+    
+    // Check if the range is big enough
+    const requiredRows = values.length + 1; // +1 for header
+    const requiredColumns = includeFormula ? 3 : 2; // Input value, result, (formula)
+    
+    if (tableRange.rowCount < requiredRows || tableRange.columnCount < requiredColumns) {
+      throw new Error(`Table range too small. Needs at least ${requiredRows} rows and ${requiredColumns} columns.`);
+    }
+    
+    // Set up headers
+    const headers = tableRange.getRow(0);
+    // Set header values with proper array structure
+    if (includeFormula) {
+      headers.values = [["Input Value", "Result", "Formula"]];
+    } else {
+      headers.values = [["Input Value", "Result"]];
+    }
+    
+    if (format?.headerFormatting) {
+      headers.format.font.bold = true;
+    }
+    
+    // Get formula text and references for the sticky-IF formulas
+    const formulaCellAddress = formulaCell.address;
+    const inputCellAddress = inputCell.address;
+    
+    // Build each row of the table
+    for (let i = 0; i < values.length; i++) {
+      const row = tableRange.getRow(i + 1);
+      const testValue = values[i];
+      
+      // Set input value in first column
+      const inputValueCell = row.getCell(0, 0);
+      inputValueCell.values = [[testValue]];
+      
+      // Create sticky-IF formula in second column
+      const stickyFormula = 
+        `=IF(${inputCellAddress}=${testValue}, ${formulaCellAddress}, ` +
+        `IF(ISBLANK(INDIRECT("RC",FALSE)), ${formulaCellAddress}, INDIRECT("RC",FALSE)))`;
+      
+      const resultCell = row.getCell(0, 1);
+      resultCell.formulas = [[stickyFormula]];
+      
+      // Add formula text if requested
+      if (includeFormula && formulaText) {
+        const formulaCell = row.getCell(0, 2);
+        // Ensure we're using array structure for cell values
+        formulaCell.values = [[formulaText.toString()]];
+      }
+    }
+    
+    // Apply table style if specified
+    if (format?.tableStyle) {
+      tableRange.format.autofitColumns();
+      // Apply a table style - implementation depends on your requirements
+      // Could use predefined table styles or custom formatting
+    }
+    
+    await context.sync();
+  }
+  
+  /**
+   * Create a two-way scenario table
+   */
+  private async createTwoWayScenarioTable(
+    context: Excel.RequestContext,
+    tableRange: Excel.Range,
+    formulaCell: Excel.Range,
+    columnInputCell: Excel.Range,
+    rowInputCell: Excel.Range,
+    columnValues: (string | number)[],
+    rowValues: (string | number)[],
+    format?: { headerFormatting?: boolean, resultFormatting?: string, tableStyle?: string },
+    includeFormula: boolean = false,
+    formulaText: string = ""
+  ): Promise<void> {
+    // Load table dimensions
+    tableRange.load("rowCount, columnCount");
+    await context.sync();
+    
+    // Check if the range is big enough
+    const requiredRows = rowValues.length + 1; // +1 for header
+    // If including formula text, need an extra column for the original formula
+    const requiredColumns = includeFormula ? columnValues.length + 2 : columnValues.length + 1;
+    
+    if (tableRange.rowCount < requiredRows || tableRange.columnCount < requiredColumns) {
+      throw new Error(`Table range too small. Needs at least ${requiredRows} rows and ${requiredColumns} columns.`);
+    }
+    
+    // Set up top-left corner cell
+    const topLeftCell = tableRange.getCell(0, 0);
+    topLeftCell.values = [[""]]; // Empty string in the top-left cell
+    
+    // Set up column headers (column input values)
+    for (let c = 0; c < columnValues.length; c++) {
+      const headerValue = columnValues[c];
+      tableRange.getCell(0, c + 1).values = [[headerValue]];
+    }
+    
+    // Set up row headers (row input values)
+    for (let r = 0; r < rowValues.length; r++) {
+      const headerValue = rowValues[r];
+      tableRange.getCell(r + 1, 0).values = [[headerValue]];
+    }
+    
+    // Apply header formatting if specified
+    if (format?.headerFormatting) {
+      tableRange.getRow(0).format.font.bold = true;
+      tableRange.getColumn(0).format.font.bold = true;
+    }
+    
+    // Get references for the sticky-IF formulas
+    const formulaCellAddress = formulaCell.address;
+    const columnInputCellAddress = columnInputCell.address;
+    const rowInputCellAddress = rowInputCell.address;
+    
+    // Build each cell of the table with sticky-IF formulas
+    for (let r = 0; r < rowValues.length; r++) {
+      for (let c = 0; c < columnValues.length; c++) {
+        const rowValue = rowValues[r];
+        const colValue = columnValues[c];
+        
+        // Create complex sticky-IF formula for two-way table
+        const stickyFormula = 
+          `=IF(AND(${columnInputCellAddress}=${colValue}, ${rowInputCellAddress}=${rowValue}), ${formulaCellAddress}, ` +
+          `IF(ISBLANK(INDIRECT("RC",FALSE)), ${formulaCellAddress}, INDIRECT("RC",FALSE)))`;
+        
+        const resultCell = tableRange.getCell(r + 1, c + 1);
+        resultCell.formulas = [[stickyFormula]];
+        
+      }
+    }
+    
+    // Apply table style if specified
+    if (format?.tableStyle) {
+      tableRange.format.autofitColumns();
+      // Apply a table style - implementation depends on your requirements
+    }
+    
+    // Add formula text if requested
+    if (includeFormula && formulaText) {
+      try {
+        // Add formula in a separate cell (e.g., below the table or in a specific location)
+        const formulaInfoCell = tableRange.getCell(rowValues.length + 1, 0);
+        formulaInfoCell.values = [["Formula:"]];
+        formulaInfoCell.format.font.bold = true;
+        
+        const formulaDisplayCell = tableRange.getCell(rowValues.length + 1, 1);
+        formulaDisplayCell.values = [[formulaText.toString()]];
+      } catch (e) {
+        console.warn(`Could not add formula text: ${e}`);
+      }
+    }
+    
+    await context.sync();
+  }
+  
+  /**
+   * Run through all scenarios to populate the table
+   */
+  private async runScenariosForTable(
+    context: Excel.RequestContext,
+    isOneWay: boolean,
+    inputCell: Excel.Range,
+    rowInputCell: Excel.Range | null,
+    columnValues: (string | number)[],
+    rowValues: (string | number)[] | null
+  ): Promise<void> {
+    if (isOneWay) {
+      // One-way table: cycle through column values
+      for (const value of columnValues) {
+        inputCell.values = [[value]];
+        await context.sync();
+        
+        // Pause briefly to allow calculation
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    } else {
+      // Two-way table: cycle through all combinations
+      for (const rowValue of rowValues!) {
+        rowInputCell!.values = [[rowValue]];
+        
+        for (const colValue of columnValues) {
+          inputCell.values = [[colValue]];
+          await context.sync();
+          
+          // Pause briefly to allow calculation
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+      }
+    }
+  }
+
+    /**
+   * Execute a SET_ROW_COLUMN_OPTIONS operation
+   * Sets row or column properties like size, grouping and visibility
+   */
+  private async executeSetRowColumnOptions(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    try {
+      const op = operation as SetRowColumnOptionsOperation;
+      const worksheet = context.workbook.worksheets.getItem(op.sheet);
+      
+      // Function to process a range of rows or columns
+      const processItems = async (type: 'row' | 'column', indices: number[]) => {
+        // Handle size options first
+        if (op.size !== undefined || op.autofit) {
+          for (const index of indices) {
+            if (type === 'row') {
+              // Get the entire row as a range
+              const rowRange = worksheet.getRanges(`${index+1}:${index+1}`);
+              
+              if (op.size !== undefined) {
+                rowRange.format.rowHeight = op.size;
+              }
+              
+              if (op.autofit) {
+                rowRange.format.autofitRows();
+              }
+            } else { // column
+              // Convert zero-based index to column letter (A, B, C, etc.)
+              const colLetter = this.columnIndexToLetter(index);
+              const colRange = worksheet.getRanges(`${colLetter}:${colLetter}`);
+              
+              if (op.size !== undefined) {
+                colRange.format.columnWidth = op.size;
+              }
+              
+              if (op.autofit) {
+                colRange.format.autofitColumns();
+              }
+            }
+          }
+        }
+        
+        // Handle visibility options
+        if (op.hidden !== undefined) {
+          for (const index of indices) {
+            if (type === 'row') {
+              const rowRange = worksheet.getRange(`${index+1}:${index+1}`);
+              rowRange.rowHidden = op.hidden;
+            } else { // column
+              const colLetter = this.columnIndexToLetter(index);
+              const colRange = worksheet.getRange(`${colLetter}:${colLetter}`);
+              colRange.columnHidden = op.hidden;
+            }
+          }
+        }
+        
+        // Handle group operations
+        if (op.group && op.group.length > 0) {
+          // Excel API requires syncing before grouping operations
+          await context.sync();
+          
+          for (const group of op.group) {
+            // Validate group indices
+            if (group.start < 0 || group.end < group.start) {
+              console.warn(`Invalid group range: ${group.start}-${group.end}`);
+              continue;
+            }
+            
+            try {
+              if (type === 'row') {
+                // Get row range for grouping
+                const startRow = group.start + 1; // 1-based
+                const endRow = group.end + 1;     // 1-based
+                const groupRange = worksheet.getRange(`${startRow}:${endRow}`);
+                
+                // Apply grouping
+                groupRange.group("ByRows");
+
+              } else { // column
+                // Get column range for grouping
+                const startCol = this.columnIndexToLetter(group.start);
+                const endCol = this.columnIndexToLetter(group.end);
+                const groupRange = worksheet.getRange(`${startCol}:${endCol}`);
+                
+                // Apply grouping 
+                groupRange.group("ByColumns");
+
+              }
+            } catch (e) {
+              console.error(`Error grouping ${type}s ${group.start}-${group.end}: ${e}`);
+            }
+          }
+        }
+      };
+      
+      // Process the rows or columns based on type
+      await processItems(op.type, op.indices);
+      
+    } catch (error) {
+      console.error(`Error setting row/column options: ${error}`);
+      throw error;
+    }
+  }
+
+  // Helper method to convert column index to letter
+  private columnIndexToLetter(index: number): string {
+    let columnName = '';
+    let dividend = index + 1;
+    let modulo: number;
+    
+    while (dividend > 0) {
+      modulo = (dividend - 1) % 26;
+      columnName = String.fromCharCode(65 + modulo) + columnName;
+      dividend = Math.floor((dividend - modulo) / 26);
+    }
+    
+    return columnName;
+  }
+
+  private async executeSetCalculationOptions(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    try {
+      const op = operation as SetCalculationOptionsOperation;
+      
+      // Set calculation mode if specified
+      if (op.calculationMode !== undefined) {
+        context.workbook.application.calculationMode = op.calculationMode;
+      }
+      
+      // Set iterative calculation options
+      if (op.iterative !== undefined) {
+        context.workbook.application.iterativeCalculation.enabled = op.iterative;
+      }
+      
+      if (op.maxIterations !== undefined) {
+        context.workbook.application.iterativeCalculation.maxIteration = op.maxIterations;
+      }
+      
+      if (op.maxChange !== undefined) {
+        context.workbook.application.iterativeCalculation.maxChange = op.maxChange;
+      }
+      
+      // Force calculation if requested
+      if (op.calculate) {
+        const calcType = op.calculationType || Excel.CalculationType.full;
+        context.workbook.application.calculate(calcType);
+      }
+      
+    } catch (error) {
+      console.error(`Error setting calculation options: ${error}`);
+      throw error;
+    }
+  }
+
+    /**
+   * Execute a RECALCULATE operation to refresh calculations
+   * Can target the entire workbook, specific worksheets, or specific ranges
+   */
+  private async executeRecalculateRanges(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
+    try {
+      const op = operation as RecalculateRangesOperation;
+      
+      // Case 1: Recalculate entire workbook
+      if (op.recalculateAll) {
+        // Use Full for complete recalculation including dependencies
+        context.workbook.application.calculate(Excel.CalculationType.full);
+        return;
+      }
+      
+      // Case 2: Recalculate specific worksheets
+      if (op.sheets && op.sheets.length > 0) {
+        for (const sheetName of op.sheets) {
+          try {
+            const worksheet = context.workbook.worksheets.getItem(sheetName);
+            worksheet.calculate(true);
+          } catch (err) {
+            console.error(`Error recalculating worksheet ${sheetName}:`, err);
+          }
+        }
+      }
+      
+      // Case 3: Recalculate specific ranges
+      if (op.ranges && op.ranges.length > 0) {
+        for (const rangeRef of op.ranges) {
+          try {
+            // Parse the reference into sheet and address
+            const { sheet, address } = this.parseReference(rangeRef);
+            const worksheet = context.workbook.worksheets.getItem(sheet);
+            const range = worksheet.getRange(address);
+            
+            // Calculate just this range
+            range.calculate();
+          } catch (err) {
+            console.error(`Error recalculating range ${rangeRef}:`, err);
+          }
+        }
+      }
+      
+      // Case 4: Calculate a specific cell
+      if (op.cell) {
+        try {
+          const { sheet, address } = this.parseReference(op.cell);
+          const worksheet = context.workbook.worksheets.getItem(sheet);
+          const cell = worksheet.getRange(address);
+          cell.calculate();
+        } catch (err) {
+          console.error(`Error recalculating cell ${op.cell}:`, err);
+        }
+      }
+      
+      // If nothing specific was provided, calculate everything
+      if ((!op.sheets || op.sheets.length === 0) && 
+          (!op.ranges || op.ranges.length === 0) && 
+          !op.cell && 
+          !op.recalculateAll) {
+        context.workbook.application.calculate(Excel.CalculationType.full);
+      }
+      
+    } catch (error) {
+      console.error(`Error during recalculation:`, error);
+      throw error;
+    }
+  }
 }
+
+

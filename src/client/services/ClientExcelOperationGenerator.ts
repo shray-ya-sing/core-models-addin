@@ -164,24 +164,18 @@ ALLOWED OPERATION TYPES:
 - filter_range: Filter a range
 - create_sheet: Create a new worksheet
 - delete_sheet: Delete a worksheet
-- rename_sheet: Rename a worksheet
 - copy_range: Copy a range to another location
 - merge_cells: Merge cells
 - unmerge_cells: Unmerge cells
 - conditional_format: Add conditional formatting
 - add_comment: Add a comment to a cell
-- set_gridlines: Show or hide gridlines
-- set_headers: Show or hide row and column headers
-- set_zoom: Set the zoom level
 - set_freeze_panes: Freeze rows or columns
-- set_visible: Show or hide a worksheet
 - set_active_sheet: Set the active worksheet
-- set_print_area: Set the print area
-- set_print_orientation: Set the print orientation
-- set_print_margins: Set the print margins
+- set_print_settings: Set print settings
+- set_page_setup: Set page setup
+- export_to_pdf: Export worksheet to PDF
+- set_worksheet_settings: Set worksheet settings
 - format_chart: Format a chart
-- format_chart_axis: Format a chart axis
-- format_chart_series: Format a chart series
 
 OPERATION SCHEMAS:
 
@@ -267,33 +261,26 @@ OPERATION SCHEMAS:
   "name": string          // Name of the sheet to delete
 }
 
-11. rename_sheet:
-{
-  "op": "rename_sheet",
-  "oldName": string,      // Current sheet name
-  "newName": string       // New sheet name
-}
-
-12. copy_range:
+11. copy_range:
 {
   "op": "copy_range",
   "source": string,       // Source range (e.g. "Sheet1!A1:D10")
   "destination": string   // Destination cell (e.g. "Sheet2!A1")
 }
 
-13. merge_cells:
+12. merge_cells:
 {
   "op": "merge_cells",
   "range": string         // Range to merge (e.g. "Sheet1!A1:D1")
 }
 
-14. unmerge_cells:
+13. unmerge_cells:
 {
   "op": "unmerge_cells",
   "range": string         // Range to unmerge (e.g. "Sheet1!A1:D1")
 }
 
-15. conditional_format:
+14. conditional_format:
 {
   "op": "conditional_format",
   "range": string,        // Range to format (e.g. "Sheet1!A1:D10")
@@ -307,20 +294,189 @@ OPERATION SCHEMAS:
   }
 }
 
-16. add_comment:
+15. add_comment:
 {
   "op": "add_comment",
   "target": string,       // Cell reference (e.g. "Sheet1!A1")
   "text": string          // Comment text
 }
 
-17. set_freeze_panes:
+16. set_freeze_panes:
 {
   "op": "set_freeze_panes",
   "sheet": string,         // Sheet name
   "address": string        // Cell address to freeze at (e.g. "B3")
   "freeze": boolean        // Whether to freeze panes. True if the user wants to freeze panes and false if they want to unfreeze.
 }
+
+17. set_print_settings:
+{
+  "op": "set_print_settings",
+  "sheet": string,         // Sheet name
+  blackAndWhite: boolean,  // Whether to print in black and white
+  draftMode: boolean,      // Whether to print in draft mode
+  firstPageNumber: number, // First page number
+  headings: boolean,       // Whether to display row/column headings when printing
+  orientation: string,     // "portrait" or "landscape"
+  printAreas: string[],    // Ranges to set as print areas (e.g. ["A1:H20", "A20:H40"])
+  printComments: string,   // "none", "at_end", "as_displayed"
+  headerMargin: number,    // Header margin in inches
+  footerMargin: number,    // Footer margin in inches
+  leftMargin: number,      // Left margin in inches
+  rightMargin: number,     // Right margin in inches
+  topMargin: number,       // Top margin in inches
+  bottomMargin: number,    // Bottom margin in inches
+  printErrors: string,     // "blank", "dash", "displayed", "na"
+  headerRows: number,      // Number of header rows
+  footerRows: number,      // Number of footer rows 
+  printTitles: string[],   // Ranges to set as print titles (e.g. ["A1:H1", "A1:H1"])
+  printGridlines: boolean, // Whether to display gridlines when printing
+}
+
+18. set_page_setup:
+{
+  "op": "set_page_setup",
+  "sheet": string,         // Sheet name
+  "pageLayoutView": string,    // "print", "normal", "pageBreakPreview"
+  "zoom": number,          // Zoom percentage
+  "gridlines": boolean,    // Whether to display gridlines
+  "headers": boolean,      // Whether to display row and column headers
+  "showFormulas": boolean, // Whether to display formulas instead of values
+  "showHeadings": boolean  // Whether to display row and column headings
+}
+
+19. export_to_pdf:
+{
+  "op": "export_to_pdf",
+  "sheet": string,         // Sheet name to export
+  "fileName": string,      // Optional name for the PDF file (without extension)
+  "quality": string,       // Optional PDF quality: "standard" or "minimal"
+  "includeComments": boolean, // Optional: whether to include comments
+  "printArea": string,     // Optional print area to export (e.g., "A1:H20")
+  "orientation": string,   // Optional page orientation: "portrait" or "landscape"
+  "fitToPage": boolean,    // Optional: whether to fit content to page
+  "margins": {             // Optional page margins in points
+    "top": number,
+    "right": number,
+    "bottom": number,
+    "left": number
+  }
+}
+
+20. set_worksheet_settings:
+{
+  "op": "set_worksheet_settings",
+  "sheet": string,         // Sheet name
+  "pageLayoutView": string,    // "print", "normal", "pageBreakPreview"
+  "zoom": number,          // Zoom percentage
+  "gridlines": boolean,    // Whether to display gridlines
+  "headers": boolean,      // Whether to display row and column headers
+  "showFormulas": boolean, // Whether to display formulas instead of values
+  "showHeadings": boolean  // Whether to display row and column headings
+  "position": int          // index of the sheet in the whole workbook. 0 based.
+  "enableCalculation": boolean // Whether to enable calculation
+  "visibility": boolean    // Whether to make the sheet visible
+}
+
+21. format_chart:
+{
+  "op": "format_chart",
+  "sheet": string,         // Sheet name
+  "chart": string,         // Chart name
+  "title": string,         // Chart title
+  "type": string,          // Chart type
+  "dataSource": string,    // Chart data source cell range address
+  "legend": boolean,        // Chart legend
+  "axis": boolean,          // Chart axis
+  "series": string,        // Chart series
+  "dataLabels": boolean,    // Chart data labels
+  
+  // Chart Dimension properties
+  "width": number,         // Chart width
+  "height": number,        // Chart height
+  
+  // Chart position properties
+  "left": number,          // Chart left position
+  "top": number,           // Chart top position
+
+    // Chart format properties
+  "fillColor": string, // Chart fill color
+  "borderVisible": boolean, // Chart border visibility
+  "borderColor": string, // Chart border color
+  "borderWidth": number, // Chart border width
+  "borderStyle": string, // Chart border style
+  "borderDashStyle": string, // Chart border dash style
+  
+  // Chart title properties
+  "titleVisible": boolean, // Whether title is visible
+  "titleFontName": string, // Title font name
+  "titleFontSize": number, // Title font size
+  "titleFontStyle": string, // Title font style
+  "titleFontBold": boolean, // Title font bold
+  "titleFontItalic": boolean, // Title font italic
+  "titleFontColor": string, // Title font color
+  "titleFormat": string, // Title format
+
+  // Legend properties
+  "legendVisible": boolean, // Whether legend is visible
+  "legendFontName": string, // Legend font name
+  "legendFontSize": number, // Legend font size
+  "legendFontStyle": string, // Legend font style
+  "legendFontBold": boolean, // Legend font bold
+  "legendFontItalic": boolean, // Legend font italic
+  "legendFontColor": string, // Legend font color
+  "legendFormat": string, // Legend format
+
+  // Chart axis properties
+  "axisVisible": boolean, // Whether axis is visible
+  "axisFontName": string, // Axis font name
+  "axisFontSize": number, // Axis font size
+  "axisFontStyle": string, // Axis font style
+  "axisFontBold": boolean, // Axis font bold
+  "axisFontItalic": boolean, // Axis font italic
+  "axisFontColor": string, // Axis font color
+  "axisFormat": string, // Axis format
+
+  // Chart series properties
+  "seriesVisible": boolean, // Whether series is visible
+  "seriesFontName": string, // Series font name
+  "seriesFontSize": number, // Series font size
+  "seriesFontStyle": string, // Series font style
+  "seriesFontBold": boolean, // Series font bold
+  "seriesFontItalic": boolean, // Series font italic
+  "seriesFontColor": string, // Series font color
+  "seriesFormat": string, // Series format
+
+  // Chart data labels properties
+  "dataLabelsVisible": boolean, // Whether data labels are visible
+  "dataLabelsFontName": string, // Data labels font name
+  "dataLabelsFontSize": number, // Data labels font size
+  "dataLabelsFontStyle": string, // Data labels font style
+  "dataLabelsFontBold": boolean, // Data labels font bold
+  "dataLabelsFontItalic": boolean, // Data labels font italic
+  "dataLabelsFontColor": string, // Data labels font color
+  "dataLabelsFormat": string, // Data labels format
+
+}
+
+22. set_calculation_options:
+{
+  "op": "set_calculation_options",
+  "calculationMode": string, // Optional calculation mode (e.g. "auto", "manual")
+  "iterative": boolean,      // Optional whether to enable iterative calculation
+  "maxIterations": number,   // Optional maximum number of iterations for iterative calculation
+  "maxChange": number,       // Optional maximum change for iterative calculation
+  "calculate": boolean,      // Optional whether to calculate the workbook
+  "calculationType": string  // Optional calculation type (e.g. "full", "full_recalculate", "recalculate")
+}
+
+23. recalculate_ranges:
+  {
+    "op": "recalculate_ranges",
+    "recalculateAll": boolean, // Optional whether to recalculate all sheets
+    "sheets": string[] // List of sheet names to recalculate
+    "ranges": string[] // List of cell range addresses to recalculate
+  }
 
 EXAMPLES:
 
