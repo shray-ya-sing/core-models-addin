@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merger & Acquisition Analysis Testing</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; line-height: 1.6; }
+    h1, h2, h3 { color: #2c3e50; }
+    .nav-btn { display: inline-block; margin: 5px; padding: 8px 12px; background: #3498db; color: #fff; text-decoration: none; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f1f1f1; }
+    .save-btn { margin-top: 20px; padding: 10px 15px; background: #2c3e50; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div>
+    <a href="advanced-finance-testing-form.html" class="nav-btn">Back to Scenarios</a>
+  </div>
+  <h1>Merger & Acquisition Analysis Testing</h1>
+  <p>Evaluate the add-in’s support for comprehensive M&A modeling: purchase price allocation, pro forma consolidation, accretion/dilution, true-ups, earn-outs, hybrid financing, multi-currency translation, deferred tax, synergy ramps, share-class accretion, break-fees, and scenario toggles.</p>
+  <table>
+    <tr>
+        <th width="5%">#</th>
+        <th width="55%">Test Query</th>
+        <th width="15%">Result</th>
+        <th width="25%">Feedback</th>
+    </tr>
+    <tr>
+        <td>1</td>
+        <td>Allocate a $1.2B purchase price among net identifiable assets—tangible, intangible, and compute goodwill residual.</td>
+        <td>
+            <select name="result-mna-1">
+            <option value="">Select…</option>
+            <option value="success">✅ Success</option>
+            <option value="partial">⚠️ Partial</option>
+            <option value="failure">❌ Failure</option>
+            </select>
+    </td>
+    <td><textarea name="feedback-mna-1" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+        <td>2</td>
+        <td>Build pro forma consolidated income statement and balance sheet post-merger, combining two entities’ line items and eliminating intercompany.</td>
+        <td>
+            <select name="result-mna-2">
+            <option value="">Select…</option>
+            <option value="success">✅ Success</option>
+            <option value="partial">⚠️ Partial</option>
+            <option value="failure">❌ Failure</option>
+            </select>
+    </td>
+    <td><textarea name="feedback-mna-2" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+        <td>3</td>
+        <td>Run accretion/dilution on EPS for AcquirerCo assuming share exchange ratio; flag if EPS accretive or dilutive in Year 1.</td>
+        <td>
+            <select name="result-mna-3">
+            <option value="">Select…</option>
+            <option value="success">✅ Success</option>
+            <option value="partial">⚠️ Partial</option>
+            <option value="failure">❌ Failure</option>
+            </select>
+    </td>
+    <td><textarea name="feedback-mna-3" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+        <td>4</td>
+        <td>Model cost synergy realization of $50M in Year 1, ramping to $100M by Year 3; adjust consolidated P&L accordingly.</td>
+        <td>
+            <select name="result-mna-4">
+            <option value="">Select…</option>
+            <option value="success">✅ Success</option>
+            <option value="partial">⚠️ Partial</option>
+            <option value="failure">❌ Failure</option>
+            </select>
+        </td>
+        <td><textarea name="feedback-mna-4" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+        <td>5</td>
+        <td>Calculate pro forma net debt / EBITDA and debt covenant ratios post-integration.</td>
+        <td>
+            <select name="result-mna-5">
+            <option value="">Select…</option>
+            <option value="success">✅ Success</option>
+            <option value="partial">⚠️ Partial</option>
+            <option value="failure">❌ Failure</option>
+            </select>
+        </td>
+        <td><textarea name="feedback-mna-5" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>Build a schedule for working-capital true-up: hold back 10% in escrow and release over 12 months based on actual vs target WC.</td>
+      <td><select name="result-mna-6"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-6" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>Model a $50M contingent earn-out if combined EBITDA > $300M in Year 2, with sliding payout between $300–350M.</td>
+      <td><select name="result-mna-7"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-7" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>Structure financing: 60% term loan A, 20% PIK toggle debt, 20% new equity; include interest capitalization and cash-sweep triggers.</td>
+      <td><select name="result-mna-8"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-8" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td>Consolidate Euro-denominated target: apply monthly FX rates, mark-to-market a cross-currency swap, post translation adjustments.</td>
+      <td><select name="result-mna-9"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-9" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>Allocate purchase price to tax basis; create deferred tax liabilities at mixed rates (21%/25%) and forecast amortization.</td>
+      <td><select name="result-mna-10"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-10" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>Build three-year synergy ramp: $20M cost savings Yr1, 50% ramp Yr2, 100% Yr3; offset $10M one-time integration costs.</td>
+      <td><select name="result-mna-11"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-11" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>Run accretion/dilution for common vs convertible preferred, factoring anti-dilution triggers in share count.</td>
+      <td><select name="result-mna-12"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-12" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>13</td>
+      <td>Model a $50M reverse break-fee if deal fails regulatory approval by Day 60 and simulate cash impact.</td>
+      <td><select name="result-mna-13"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-13" placeholder="Your feedback…"></textarea></td>
+    </tr>
+    <tr>
+      <td>14</td>
+      <td>Add toggles for Base/Downside/Upside synergy cases; refresh EPS, IRR, and Net Debt/EBITDA metrics.</td>
+      <td><select name="result-mna-14"><option value="">Select…</option><option value="success">✅ Success</option><option value="partial">⚠️ Partial</option><option value="failure">❌ Failure</option></select></td>
+      <td><textarea name="feedback-mna-14" placeholder="Your feedback…"></textarea></td>
+    </tr>
+  </table>
+  <button class="save-btn" onclick="saveResults()">Save Results</button>
+  <script>
+    function saveResults() {
+      const res={}, sels=document.querySelectorAll('select'), tas=document.querySelectorAll('textarea');
+      sels.forEach(s=>res[s.name]=s.value); tas.forEach(t=>res[t.name]=t.value);
+      let out='# M&A Analysis Testing Results\n\n';
+      for(let i=1;i<=14;i++){ out+=`## Query ${i}\nResult: ${res['result-mna-'+i]||'Not tested'}\nFeedback: ${res['feedback-mna-'+i]||''}\n\n`; }
+      const b=new Blob([out],{type:'text/plain'}), u=URL.createObjectURL(b);
+      const a=document.createElement('a'); a.href=u; a.download='mna_testing_results.txt'; a.click(); URL.revokeObjectURL(u);
+      alert('Results saved!');
+    }
+  </script>
+</body>
+</html>

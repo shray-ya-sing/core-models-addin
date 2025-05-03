@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PE Carve-Out Testing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3, h4 {
+            color: #2c3e50;
+        }
+        .intro {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        select {
+            width: 100%;
+            padding: 5px;
+        }
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .save-btn:hover {
+            background-color: #45a049;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            margin-bottom: 20px;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #3498db;
+            color: white;
+        }
+        .tabcontent {
+            display: none;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+        #acquisition {
+            display: block;
+        }
+        .nav-btn {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 10px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        .nav-btn:hover {
+            background-color: #2980b9;
+        }
+        .nav-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .scenario-description {
+            background-color: #e8f4fd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 25px;
+            border-left: 5px solid #3498db;
+        }
+        .modeling-challenge {
+            background-color: #fff8e1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 5px solid #ffc107;
+        }
+        .evaluation-guidance {
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0 25px 0;
+            border-left: 5px solid #4caf50;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-container">
+        <a href="advanced-finance-testing-form.html" class="nav-btn">Back to Scenarios</a>
+        <a href="testing-form.html" class="nav-btn">Main Testing Form</a>
+        <a href="renewable-energy-testing.html" class="nav-btn">Renewable Energy Testing</a>
+    </div>
+    
+    <h1>PE Carve-Out Complex Financial Modeling Testing</h1>
+    
+    <div class="scenario-description">
+        <h2>Complex Financial Modeling Scenario: Distressed Conglomerate Carve-Out</h2>
+        <p>In this scenario, three private equity firms (PE-A, PE-B, and PE-C) are forming a consortium to acquire a struggling division of a large conglomerate. The target division has multiple business units across different industries with varying growth profiles and capital requirements.</p>
+        
+        <h3>Key Modeling Challenges</h3>
+        <div class="modeling-challenge">
+            <h4>1. Complex Acquisition Structure</h4>
+            <p>The transaction involves a multi-tiered holding company structure, management rollover equity with ratchet provisions, seller financing with performance-based earnouts, and multiple co-investors with different entry valuations.</p>
+        </div>
+        
+        <div class="modeling-challenge">
+            <h4>2. Sophisticated Debt Package</h4>
+            <p>The financing includes senior secured term loans with mandatory prepayment provisions, second-lien debt with PIK toggle options, mezzanine financing with equity kickers, revolving credit facilities with seasonal adjustments, and vendor financing for capital expenditures.</p>
+        </div>
+        
+        <div class="modeling-challenge">
+            <h4>3. Operational Restructuring</h4>
+            <p>The model must address synergy modeling across business units with implementation costs, headcount reduction and facility consolidation, working capital optimization by segment, and capex rationalization with maintenance vs. growth categorization.</p>
+        </div>
+        
+        <div class="modeling-challenge">
+            <h4>4. Tax Considerations</h4>
+            <p>The transaction spans multiple jurisdictions with varying tax rates, involves loss carryforwards with limitations, requires transfer pricing between business units, and needs tax-efficient repatriation of cash.</p>
+        </div>
+        
+        <div class="modeling-challenge">
+            <h4>5. Exit Strategy Planning</h4>
+            <p>The model needs to evaluate multiple exit scenarios (IPO, strategic sale, secondary), consider division-by-division or whole company exit options, calculate sponsor-specific returns with carried interest waterfall, and model management equity value under various exit scenarios.</p>
+        </div>
+        
+        <div class="evaluation-guidance">
+            <h3>What to Look For in Add-in Responses</h3>
+            <p>When evaluating the add-in's performance on these test cases, look for:</p>
+            <ul>
+                <li>Ability to understand complex financial structures and relationships</li>
+                <li>Proper implementation of financial modeling best practices</li>
+                <li>Correct handling of tiered capital structures and returns waterfall calculations</li>
+                <li>Understanding of PE transaction mechanics and terminology</li>
+                <li>Appropriate organization of multi-tab models with clear data flow</li>
+                <li>Implementation of proper sensitivity analyses and scenario modeling</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'acquisition')">Acquisition Structure</button>
+        <button class="tablinks" onclick="openTab(event, 'debt')">Debt Modeling</button>
+        <button class="tablinks" onclick="openTab(event, 'operations')">Operational Restructuring</button>
+        <button class="tablinks" onclick="openTab(event, 'taxation')">Tax Considerations</button>
+        <button class="tablinks" onclick="openTab(event, 'exit')">Exit Strategy</button>
+    </div>
+    
+    <div id="acquisition" class="tabcontent">
+        <h2>Complex Acquisition Structure Modeling</h2>
+        <p>These tests evaluate the add-in's ability to help build complex acquisition structures with multiple investors and tiered holding companies.</p>
+        <table>
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Create a worksheet for modeling a multi-tier holding company structure with 3 PE sponsors having different ownership percentages (40%, 35%, 25%) and management rollover equity of 10%</td>
+                <td>
+                    <select name="result-acq-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-acq-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Design a formula for calculating management equity ratchet that increases ownership by 5% if EBITDA exceeds $100M and another 5% if it exceeds $150M</td>
+                <td>
+                    <select name="result-acq-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-acq-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Create a model for an earnout provision where the seller receives additional $50M if revenue CAGR exceeds 15% over the first 3 years</td>
+                <td>
+                    <select name="result-acq-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-acq-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Model a co-investment mechanism where investors A, B, and C have different entry valuations (10x, 11x, and 12x EBITDA) and calculate the implied blended purchase multiple</td>
+                <td>
+                    <select name="result-acq-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-acq-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Create a sources and uses of funds table for a $750M acquisition with 50% equity contribution, senior debt at 4x EBITDA, and the remainder in mezzanine financing</td>
+                <td>
+                    <select name="result-acq-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-acq-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="debt" class="tabcontent">
+        <h2>Sophisticated Debt Package Modeling</h2>
+        <p>These tests evaluate the add-in's ability to model complex debt structures with multiple tranches and unique features.</p>
+        <table>
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Create a debt schedule for a senior secured term loan with 1% quarterly amortization, 5% interest rate, and mandatory prepayments of 50% of excess cash flow</td>
+                <td>
+                    <select name="result-debt-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-debt-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Model a second-lien debt with PIK toggle options that allows the company to pay 50% of interest in additional debt if cash flow coverage ratio falls below 1.2x</td>
+                <td>
+                    <select name="result-debt-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-debt-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Create a model for mezzanine financing with a 12% coupon and equity kickers worth 2% of equity upon exit if IRR exceeds 20%</td>
+                <td>
+                    <select name="result-debt-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-debt-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Model a revolving credit facility with seasonal adjustments that increases availability to $100M during peak season (Q4) and reduces to $60M during other quarters</td>
+                <td>
+                    <select name="result-debt-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-debt-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Design a debt covenant compliance model that tracks and calculates leverage ratio, interest coverage ratio, fixed charge coverage ratio, and minimum EBITDA tests</td>
+                <td>
+                    <select name="result-debt-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-debt-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="operations" class="tabcontent">
+        <h2>Operational Restructuring Modeling</h2>
+        <p>These tests evaluate the add-in's ability to model complex operational restructuring scenarios with synergies and cost optimizations.</p>
+        <table>
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Design a synergy model that tracks implementation costs and benefits across 4 business units with 3 categories: headcount reduction, procurement, and facility consolidation</td>
+                <td>
+                    <select name="result-ops-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ops-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Create a workforce reduction model that calculates severance costs, implementation timing, and annual savings by department for 3 business segments</td>
+                <td>
+                    <select name="result-ops-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ops-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Model working capital optimization by segment with different DSO, DPO, and inventory turnover targets and transition periods to achieve them</td>
+                <td>
+                    <select name="result-ops-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ops-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Create a capex rationalization model that categorizes spending as maintenance vs. growth and optimizes allocation across 4 business units based on ROI thresholds</td>
+                <td>
+                    <select name="result-ops-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ops-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Build a SKU rationalization model that analyzes profitability by product and eliminates bottom 20% of products while modeling revenue retention of 85%</td>
+                <td>
+                    <select name="result-ops-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-ops-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="taxation" class="tabcontent">
+        <h2>Complex Tax Considerations Modeling</h2>
+        <p>These tests evaluate the add-in's ability to model sophisticated tax structures and considerations across multiple jurisdictions.</p>
+        <table>
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Create a multi-jurisdiction tax model with operations in 5 countries, each with different tax rates, and calculate consolidated effective tax rate</td>
+                <td>
+                    <select name="result-tax-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-tax-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Model the utilization of $200M in NOL carryforwards with an annual limitation of $25M due to change of control restrictions</td>
+                <td>
+                    <select name="result-tax-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-tax-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Design a transfer pricing model for intercompany transactions between manufacturing hub and 3 sales entities with arm's length pricing adjustments</td>
+                <td>
+                    <select name="result-tax-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-tax-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Create a tax depreciation schedule that accounts for different depreciation methods across jurisdictions (MACRS in US, straight-line in Europe)</td>
+                <td>
+                    <select name="result-tax-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-tax-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Model a step-up in tax basis post-acquisition and calculate the annual tax shield benefit over the depreciable life of the assets</td>
+                <td>
+                    <select name="result-tax-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-tax-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div id="exit" class="tabcontent">
+        <h2>Exit Strategy Modeling</h2>
+        <p>These tests evaluate the add-in's ability to model complex exit scenarios and returns calculations for different investor classes.</p>
+        <table>
+            <tr>
+                <th width="5%">#</th>
+                <th width="50%">Test Query</th>
+                <th width="15%">Result</th>
+                <th width="30%">Feedback</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Create a model for multiple exit scenarios: IPO at 10x EBITDA, strategic sale at 12x EBITDA, and secondary sale to another PE firm at 9x EBITDA</td>
+                <td>
+                    <select name="result-exit-1">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-exit-1" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Model division-by-division exit options with Business Unit A sold in Year 3, Business Unit B in Year 4, and remaining business in Year 5</td>
+                <td>
+                    <select name="result-exit-2">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-exit-2" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Create a sponsor-specific returns model with carried interest waterfall (8% hurdle, 20% carry) and calculation of returns for each PE firm</td>
+                <td>
+                    <select name="result-exit-3">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-exit-3" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Design a management equity value model under various exit scenarios with vesting schedules and different performance thresholds</td>
+                <td>
+                    <select name="result-exit-4">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-exit-4" placeholder="Your feedback..."></textarea></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Build a sensitivity analysis showing exit multiples (8x-14x) vs. hold periods (3-7 years) and the resulting IRR and MOIC for all investor classes</td>
+                <td>
+                    <select name="result-exit-5">
+                        <option value="">Select...</option>
+                        <option value="success">✅ Success</option>
+                        <option value="partial">⚠️ Partial</option>
+                        <option value="failure">❌ Failure</option>
+                    </select>
+                </td>
+                <td><textarea name="feedback-exit-5" placeholder="Your feedback..."></textarea></td>
+            </tr>
+        </table>
+    </div>
+    
+    <button class="save-btn" onclick="saveResults()">Save Results</button>
+    
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        function saveResults() {
+            // Collect all results
+            const results = {};
+            const selects = document.querySelectorAll('select');
+            const textareas = document.querySelectorAll('textarea');
+            
+            selects.forEach(select => {
+                if (select.name) {
+                    results[select.name] = select.value;
+                }
+            });
+            
+            textareas.forEach(textarea => {
+                if (textarea.name) {
+                    results[textarea.name] = textarea.value;
+                }
+            });
+            
+            // Format the results for saving
+            let resultText = "# PE Carve-Out Testing Results\n\n";
+            
+            // Add section for each tab
+            const tabs = ["acquisition", "debt", "operations", "taxation", "exit"];
+            const tabNames = {
+                "acquisition": "Acquisition Structure",
+                "debt": "Debt Modeling",
+                "operations": "Operational Restructuring",
+                "taxation": "Tax Considerations",
+                "exit": "Exit Strategy"
+            };
+            
+            tabs.forEach(tab => {
+                resultText += `## ${tabNames[tab]}\n\n`;
+                
+                // Find all results for this section
+                for (let i = 1; i <= 5; i++) {
+                    const resultName = `result-${tab.substring(0, 3)}-${i}`;
+                    const feedbackName = `feedback-${tab.substring(0, 3)}-${i}`;
+                    
+                    const result = results[resultName] || "Not tested";
+                    const feedback = results[feedbackName] || "";
+                    
+                    // Get the test query text from the table
+                    const queryElement = document.querySelector(`#${tab} tr:nth-child(${i + 1}) td:nth-child(2)`);
+                    const query = queryElement ? queryElement.textContent : `Query ${i}`;
+                    
+                    resultText += `### Query ${i}: ${query}\n`;
+                    resultText += `Result: ${result}\n`;
+                    resultText += `Feedback: ${feedback}\n\n`;
+                }
+            });
+            
+            // Create a download link for the results
+            const blob = new Blob([resultText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'pe_carveout_testing_results.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            alert('Results saved! You can find them in your downloads folder.');
+        }
+    </script>
+</body>
+</html>

@@ -89,6 +89,29 @@
         #basic-ops {
             display: block;
         }
+        .nav-btn {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 10px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        .nav-btn:hover {
+            background-color: #2980b9;
+        }
+        .nav-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
         .back-link {
             display: inline-block;
             margin-bottom: 20px;
@@ -102,7 +125,10 @@
     </style>
 </head>
 <body>
-    <a href="testing-form.html" class="back-link">← Back to Main Testing Form</a>
+    <div class="nav-container">
+        <a href="testing-form.html" class="nav-btn">Main Testing Form</a>
+        <a href="advanced-finance-testing-form.html" class="nav-btn">Advanced Financial Modeling Testing</a>
+    </div>
     
     <h1>Excel Command Execution Testing</h1>
     
