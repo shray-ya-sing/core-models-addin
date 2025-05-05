@@ -1,50 +1,25 @@
 import * as React from "react";
-import { makeStyles, FluentProvider, tokens, webDarkTheme } from "@fluentui/react-components";
 import Header from "./Header";
-import { FinancialModelChat } from "../../client/components/FinancialModelChat";
+import TailwindFinancialModelChat from "../../client/components/TailwindFinancialModelChat";
 
 export interface AppProps {
   title: string;
   isOfficeInitialized: boolean;
 }
 
-const useStyles = makeStyles({
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    backgroundColor: tokens.colorNeutralBackground1,
-    color: tokens.colorNeutralForeground1,
-  },
-  content: {
-    flexGrow: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "auto",
-    padding: tokens.spacingVerticalM,
-  }
-});
-
-// Create a custom dark theme based on webDarkTheme with deeper background
-const customDarkTheme = {
-  ...webDarkTheme,
-  colorNeutralBackground1: '#1a1a1a',
-  colorNeutralBackground2: '#2a2a2a',
-  colorBrandForeground1: '#4cc2ff',
-};
-
 const App: React.FC<AppProps> = () => {
-  const styles = useStyles();
+  // Apply global monospace font style
+  const monoStyle = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  };
 
   return (
-    <FluentProvider theme={customDarkTheme}>
-      <div className={styles.root}>
-        <Header title="Financial Model Assistant" logo="assets/logo-filled.png" />
-        <div className={styles.content}>
-          <FinancialModelChat />
-        </div>
+    <div className="h-screen flex flex-col bg-transparent" style={monoStyle}>
+      <Header />
+      <div className="flex-1 flex flex-col overflow-auto">
+        <TailwindFinancialModelChat />
       </div>
-    </FluentProvider>
+    </div>
   );
 };
 
