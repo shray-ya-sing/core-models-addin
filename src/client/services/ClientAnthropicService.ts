@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { CommandStatus } from '../models/CommandModels';
 import { ChatHistoryMessage } from './ClientQueryProcessor';
 
@@ -31,6 +32,7 @@ export enum ModelType {
  */
 export class ClientAnthropicService {
   private anthropic: Anthropic;
+  private openai: OpenAI;
   private debugMode: boolean = true;
   // Enable verbose logging of chunks sent to LLM (TEMPORARY)
   private verboseLogging: boolean = true;
@@ -45,11 +47,19 @@ export class ClientAnthropicService {
   // Default model selection
   private defaultModel: string = this.models[ModelType.Advanced];
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, openaiApiKey?: string) {
     this.anthropic = new Anthropic({
       apiKey: apiKey,
       dangerouslyAllowBrowser: true // Enable browser usage
     });
+    
+    // Initialize OpenAI client if API key is provided
+    if (openaiApiKey) {
+      this.openai = new OpenAI({
+        apiKey: openaiApiKey,
+        dangerouslyAllowBrowser: true
+      });
+    }
   }
   
   /**
@@ -160,13 +170,62 @@ export class ClientAnthropicService {
    * @param chatHistory Previous conversation history for context
    * @returns Classification and decomposition of the query
    */
-  public async classifyQueryAndDecompose(
+  /**
+   * Generate feedback for the LLM when it fails to provide valid JSON
+   * @param error The error that occurred
+   * @param attempt The current retry attempt number
+   * @returns Feedback string to include in the next attempt
+   */
+  private generateJsonFeedback(error: any, attempt: number): string {
+    // Determine the type of error
+    const isParseError = error instanceof SyntaxError || error.message?.includes('JSON');
+    const isSchemaError = error.message?.includes('schema') || error.message?.includes('property');
+    
+    let feedback = `I need you to return a valid JSON object. Your previous response could not be processed correctly.`;
+    
+    if (isParseError) {
+      feedback += ` There was a JSON parsing error: ${error.message}.`;
+      
+      // Add specific feedback based on common JSON errors
+      if (error.message?.includes('Unexpected token')) {
+        feedback += ` Check for missing quotes, commas, or brackets.`;
+      } else if (error.message?.includes('Unexpected end')) {
+        feedback += ` Your JSON appears to be incomplete. Make sure all objects and arrays are properly closed.`;
+      }
+    } else if (isSchemaError) {
+      feedback += ` Your JSON structure was invalid: ${error.message}. Make sure all required properties are present and have the correct types.`;
+    }
+    
+    // Add more urgency for later attempts
+    if (attempt > 1) {
+      feedback += ` This is attempt ${attempt}. It's critical that you return ONLY a valid JSON object with no additional text.`;
+    }
+    
+    // Include a reminder of the expected format
+    feedback += ` Remember, your response must be a JSON object with the following structure:
+{
+  "query_type": string,  // One of: greeting, workbook_question, workbook_question_kb, workbook_command, workbook_command_kb
+  "steps": [
+    {
+      "step_index": number,
+      "step_action": string,
+      "step_specific_query": string,
+      "step_type": string,
+      "depends_on": number[]
+    }
+  ]
+}`;
+    
+    return feedback;
+  }
+
+ public async classifyQueryAndDecompose(
     query: string,
     chatHistory: Array<{role: string, content: string}> = []
   ): Promise<any> {
     try {
       // Create a powerful system prompt for query classification and decomposition
-      const systemPrompt = `Your name is Cori.You are an expert financial model assistant specialized in Excel workbooks. Your task is to analyze user queries, classify them, and decompose them into logical steps.
+      const systemPrompt = `You are a command classifier for an expert financial model assistant specialized in Excel workbooks. Your task is to analyze user queries, classify them, and decompose them into logical steps.
 
 CLASSIFICATION TYPES:
 - greeting: ONLY pure greetings or pleasantries with no task, question or command intent (like "hello", "how are you?", etc.)
@@ -295,7 +354,27 @@ Important rules:
 4. Keep step_action descriptions concise but clear
 5. Make step_specific_query suitable for direct execution by the appropriate handler
 6. IMPORTANT: Do NOT classify a query as a greeting if it contains a greeting word but also includes a question or command. For example, "Hi, what's the total revenue?" should be classified as workbook_question, not greeting
-7. Only classify as greeting if the SOLE intent is a greeting with no task`;
+7. Only classify as greeting if the SOLE intent is a greeting with no task
+
+ANTI-PATTERNS TO AVOID:
+1. DO NOT respond with "I'll analyze this query" or "I'll classify this as..."
+2. DO NOT include any explanatory text before or after the JSON
+4. DO NOT include phrases like "Here's the classification" or "Here's the JSON"
+5. DO NOT respond with "I understand you want me to..."
+6. DO NOT acknowledge the request in natural language
+7. NEVER respond with anything other than the raw JSON object
+
+YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT WITH NO OTHER TEXT.
+YOU ARE NOT RESPONDING TO A HUMAN. YOUR RESPONSE WILL ONLY BE SEEN BY AN INTERNAL PROCESSOR THAT EXPECTS RAW JSON.
+IF YOU ADD ANY TEXT BEFORE OR AFTER THE JSON, THE SYSTEM WILL BREAK.
+
+EXAMPLE OF CORRECT RESPONSE:
+{"query_type":"workbook_command","steps":[{"step_index":0,"step_action":"Update data","step_specific_query":"Update cell A1","step_type":"workbook_command","depends_on":[]}]}
+
+EXAMPLE OF INCORRECT RESPONSE:
+
+I'll classify this query for you. Here's the JSON:
+{"query_type":"workbook_command","steps":[{"step_index":0,"step_action":"Update data","step_specific_query":"Update cell A1","step_type":"workbook_command","depends_on":[]}]}`;
 
     // Use Sonnet for classification (most capable model)
     const modelToUse = this.models[ModelType.Standard];
@@ -336,48 +415,57 @@ Important rules:
         query: query.substring(0, 50) + (query.length > 50 ? '...' : '')
       });
     }
-    
-    // Call the API to get the classification
-    const response = await this.anthropic.messages.create({
-      model: modelToUse,
-      system: systemPrompt,
-      messages: messages as any, // Type assertion to resolve SDK type issue
-      max_tokens: 2000,
-      temperature: 0.2, // Low temperature for more deterministic classification
-    });
-    
-    // Extract the classification result
-    let responseContent = response.content?.[0]?.type === 'text' 
-      ? response.content[0].text 
-      : '{"query_type":"unknown","steps":[]}';
-    
-    try {
-      // Extract JSON if it's wrapped in a markdown code block
-      responseContent = this.extractJsonFromMarkdown(responseContent);
-      
-      // Parse the JSON response
-      const classification = JSON.parse(responseContent);
-      
-      if (this.debugMode) {
-        console.log('Query Classification Result:', classification);
-      }
-      
-      return classification;
-    } catch (parseError) {
-      console.error('Failed to parse classification JSON:', parseError);
-      console.error('Raw response content:', responseContent);
-      // Return a default classification if parsing fails
-      return {
-        query_type: 'unknown',
-        steps: [{
-          step_index: 0,
-          step_action: 'Unknown action',
-          step_specific_query: query,
-          step_type: 'unknown',
-          depends_on: []
-        }]
-      };
-    }
+      // Use the retry mechanism for the API call with OpenAI fallback
+      return await this.retryWithFeedback(
+        async (feedback?: string) => {
+          // If we have feedback from a previous failed attempt, append it to the system prompt
+          let updatedSystemPrompt = systemPrompt;
+          if (feedback) {
+            updatedSystemPrompt = `${feedback}\n\n${systemPrompt}`;
+            if (this.debugMode) {
+              console.log('Retrying with feedback:', feedback.substring(0, 100) + '...');
+            }
+          }
+          
+          // Call the API to get the classification
+          const response = await this.anthropic.messages.create({
+            model: modelToUse,
+            system: updatedSystemPrompt,
+            messages: messages as any, // Type assertion to resolve SDK type issue
+            max_tokens: 2000,
+            temperature: 0.2, // Low temperature for more deterministic classification
+          });
+          
+          // Extract the classification result
+          let responseContent = response.content?.[0]?.type === 'text' 
+            ? response.content[0].text 
+            : '{"query_type":"unknown","steps":[]}';
+          
+          // Extract JSON if it's wrapped in a markdown code block
+          responseContent = this.extractJsonFromMarkdown(responseContent);
+          
+          // Parse the JSON response
+          const classification = JSON.parse(responseContent);
+          
+          if (this.debugMode) {
+            console.log('Query Classification Result:', classification);
+          }
+          
+          return classification;
+        },
+        3, // Maximum 3 retries
+        500, // Initial delay of 500ms
+        (error, attempt) => {
+          // Generate feedback for the next retry attempt
+          return this.generateJsonFeedback(error, attempt);
+        },
+        // Add OpenAI fallback options
+        {
+          prompt: query,
+          systemPrompt: systemPrompt,
+          isJsonResponse: true
+        }
+      );
   } catch (error: any) {
     console.error('Error classifying query:', error);
     throw this.handleApiError(error);
@@ -472,7 +560,7 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
         return {
           id: responseId,
           assistantMessage: fullResponse,
-          command: this.extractCommandPlan(fullResponse),
+          command: await this.extractCommandPlan(fullResponse, prompt, systemPrompt),
           rawResponse: null
         };
       } else {
@@ -497,7 +585,7 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
           : 'No response text received';
         
         // Extract any commands from the response
-        const commandPlan = this.extractCommandPlan(messageText);
+        const commandPlan = await this.extractCommandPlan(messageText, prompt, systemPrompt);
         
         // Return the result
         return {
@@ -516,17 +604,140 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
   
 
   /**
-   * Extracts JSON content from a markdown code block if present
-   * @param text The text that might contain a markdown code block
-   * @returns The extracted JSON content or the original text if no code block is found
+   * Retry an API call with exponential backoff and feedback on failures
+   * @param apiCallFn The function to retry
+   * @param maxRetries Maximum number of retry attempts
+   * @param initialDelay Initial delay in milliseconds
+   * @param feedbackFn Function to generate feedback for retry attempts
+   * @param openAiFallbackOptions Optional options for OpenAI fallback if all retries fail
+   * @returns The result of the successful API call
+   * @throws Error if all retries fail and no fallback is available
+   */
+  private async retryWithFeedback<T>(
+    apiCallFn: (feedback?: string) => Promise<T>,
+    maxRetries: number = 3,
+    initialDelay: number = 500,
+    feedbackFn?: (error: any, attempt: number) => string,
+    openAiFallbackOptions?: {
+      prompt: string;
+      systemPrompt: string;
+      isJsonResponse: boolean;
+    }
+  ): Promise<T> {
+    let lastError: any;
+    let feedback: string | undefined;
+    
+    for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
+      try {
+        // Make the API call with any feedback from previous attempts
+        return await apiCallFn(feedback);
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`API call failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message || error);
+        
+        // If this was the last attempt, don't retry with Claude
+        if (attempt >= maxRetries) {
+          break;
+        }
+        
+        // Generate feedback for the next attempt if a feedback function is provided
+        if (feedbackFn) {
+          feedback = feedbackFn(error, attempt + 1);
+        }
+        
+        // Calculate delay with exponential backoff
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Retrying in ${delay}ms...`);
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    // If we have OpenAI fallback options and the OpenAI client is initialized, try using OpenAI
+    if (openAiFallbackOptions && this.openai) {
+      try {
+        console.log(`\ud83d\udd04 All Claude retries failed. Attempting OpenAI fallback...`);
+        
+        // If this is a JSON response, use the specialized method
+        if (openAiFallbackOptions.isJsonResponse) {
+          return await this.getOpenAIJsonResponse(
+            openAiFallbackOptions.prompt,
+            openAiFallbackOptions.systemPrompt
+          ) as T;
+        } else {
+          // For non-JSON responses, use a standard completion
+          const response = await this.openai.chat.completions.create({
+            model: 'gpt-4.1-nano-2025-04-14',
+            messages: [
+              { role: 'system', content: openAiFallbackOptions.systemPrompt },
+              { role: 'user', content: openAiFallbackOptions.prompt }
+            ],
+            temperature: 0.7
+          });
+          
+          return response.choices[0]?.message?.content as unknown as T;
+        }
+      } catch (fallbackError) {
+        console.error(`\u274c OpenAI fallback also failed:`, fallbackError);
+        // If fallback fails, throw the original error
+        throw lastError;
+      }
+    }
+    
+    // If we get here, all retries failed and no fallback was available or successful
+    throw lastError;
+  }
+  
+  /**
+   * Get a JSON response from OpenAI as a fallback when Claude fails
+   * @param prompt The prompt to send to OpenAI
+   * @param systemPrompt The system prompt to guide OpenAI's response
+   * @returns The JSON response from OpenAI
+   */
+  private async getOpenAIJsonResponse(prompt: string, systemPrompt: string): Promise<any> {
+    if (!this.openai) {
+      throw new Error('OpenAI client not initialized. Please provide an OpenAI API key when creating the ClientAnthropicService instance.');
+    }
+
+    console.log('🔄 Falling back to OpenAI for JSON response...');
+    
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4.1-nano-2025-04-14', // Using the specified model
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' }, // Ensure JSON format
+        temperature: 0.2 // Low temperature for more deterministic output
+      });
+
+      const content = response.choices[0]?.message?.content || '{}';
+      
+      if (this.debugMode) {
+        console.log('✅ OpenAI fallback response received:', content.substring(0, 100) + '...');
+      }
+      
+      return JSON.parse(content);
+    } catch (error) {
+      console.error('❌ OpenAI fallback request failed:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Extracts JSON content from markdown formatted text
+   * @param text The markdown text that may contain a JSON code block or raw JSON
+   * @returns The extracted JSON content or the original text if no JSON is found
    */
   public extractJsonFromMarkdown(text: string): string {
-    // Check if the text contains a code block
+    // First check if the text contains a code block
     const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/;
-    const match = text.match(codeBlockRegex);
+    const codeBlockMatch = text.match(codeBlockRegex);
     
-    if (match && match[1]) {
-      const codeBlockContent = match[1].trim();
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      const codeBlockContent = codeBlockMatch[1].trim();
       
       if (this.debugMode) {
         console.log('Extracted JSON from markdown code block:', 
@@ -537,7 +748,23 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
       return codeBlockContent;
     }
     
-    // Return the original text if it doesn't match code block pattern
+    // If no code block, check if the text contains a JSON object (starts with { and ends with })
+    const jsonObjectRegex = /^\s*({[\s\S]*})\s*$/;
+    const jsonObjectMatch = text.match(jsonObjectRegex);
+    
+    if (jsonObjectMatch && jsonObjectMatch[1]) {
+      const jsonContent = jsonObjectMatch[1].trim();
+      
+      if (this.debugMode) {
+        console.log('Extracted raw JSON object:', 
+          jsonContent.substring(0, Math.min(50, jsonContent.length)) + 
+          (jsonContent.length > 50 ? '...' : ''));
+      }
+      
+      return jsonContent;
+    }
+    
+    // Return the original text if it doesn't match any JSON pattern
     return text;
   }
   
@@ -594,7 +821,8 @@ THEN include ALL sheets in your response.
 
 IF IN DOUBT, include the sheet rather than exclude it. It's always better to include too many sheets than too few.
 
-RESPOND WITH VALID JSON ONLY - an array of strings representing sheet names.`;
+RESPOND WITH VALID JSON ONLY - an array of strings representing sheet names.
+YOU ARE NOT RESPONDING TO A HUMAN. YOUR RESPONSE WILL BE SEEN BY AN INTERNAL PROCESSOR THAT EXPECTS A JSON CODE BLOCK CONTAINING JSON CODE.`;
       
       // Format the chat history for context, filtering out system messages
     const filteredChatHistory = chatHistory.filter(msg => msg.role !== 'system');
@@ -661,6 +889,39 @@ Return a JSON array containing ONLY the names of sheets relevant to the query.`;
       } catch (parseError) {
         console.error('Error parsing sheet selection response:', parseError);
         console.log('Raw response:', jsonText);
+        
+        // Try OpenAI fallback if available
+        if (this.openai) {
+          try {
+            console.log('🔄 Falling back to OpenAI for sheet selection JSON response...');
+            
+            // Create a prompt for OpenAI with the same information
+            const openAiPrompt = `USER QUERY: "${query}"
+
+AVAILABLE SHEETS:
+${sheetsDescription}${chatHistory.length > 0 ? `
+
+CHAT HISTORY FOR CONTEXT:
+${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')}` : ''}`;
+            
+            const result = await this.getOpenAIJsonResponse(openAiPrompt, systemPrompt);
+            
+            // Extract sheet names from the OpenAI response
+            const sheetNames = Array.isArray(result) ? result : 
+                              (result.sheets && Array.isArray(result.sheets)) ? result.sheets : 
+                              [];
+            
+            if (this.debugMode) {
+              console.log(`%c OpenAI fallback selected sheets: ${sheetNames.join(', ')}`, 'color: #2ecc71');
+            }
+            
+            return sheetNames;
+          } catch (fallbackError) {
+            console.error('OpenAI fallback also failed:', fallbackError);
+            return [];
+          }
+        }
+        
         return [];
       }
     } catch (error: any) {
@@ -694,7 +955,7 @@ Return a JSON array containing ONLY the names of sheets relevant to the query.`;
    * @param responseText The assistant's response text
    * @returns The extracted command plan, or null if none found
    */
-  private extractCommandPlan(responseText: string): any {
+  private async extractCommandPlan(responseText: string, originalPrompt?: string, systemPrompt?: string): Promise<any> {
     try {
       // Look for special command markers in the response
       const commandRegex = /```json\s*([\s\S]*?)\s*```|\<command\>([\s\S]*?)\<\/command\>/i;
@@ -725,6 +986,43 @@ Return a JSON array containing ONLY the names of sheets relevant to the query.`;
           };
         } catch (parseError) {
           console.warn('Failed to parse command JSON:', parseError);
+          
+          // Try OpenAI fallback if available and we have the original prompt and system prompt
+          if (this.openai && originalPrompt && systemPrompt) {
+            try {
+              console.log('🔄 Falling back to OpenAI for command plan JSON parsing...');
+              
+              // Create a system prompt for OpenAI that emphasizes JSON structure
+              const openAiSystemPrompt = `${systemPrompt}\n\nIMPORTANT: Your response MUST be valid JSON that follows this structure:\n{\n  "description": "Brief description of the command",\n  "steps": [\n    {\n      "description": "Step description",\n      "operations": [\n        {\n          "op": "operation_type",\n          ... operation parameters\n        }\n      ]\n    }\n  ]\n}\n\nEnsure your JSON is properly formatted with no syntax errors.`;
+              
+              const result = await this.getOpenAIJsonResponse(originalPrompt, openAiSystemPrompt);
+              
+              // Ensure steps array exists
+              const steps = result.steps || [];
+              
+              // Ensure each step has an operations array and required properties
+              const validatedSteps = steps.map(step => ({
+                ...step,
+                description: step.description || 'Step',
+                operations: Array.isArray(step.operations) ? step.operations : [],
+                status: step.status || 'pending'
+              }));
+              
+              console.log('✅ Successfully parsed command plan using OpenAI fallback');
+              
+              // Return a properly formatted command
+              return {
+                id: uuidv4(),
+                description: result.description || 'Execute Excel operations',
+                steps: validatedSteps,
+                status: CommandStatus.Pending
+              };
+            } catch (fallbackError) {
+              console.error('❌ OpenAI fallback also failed to parse command JSON:', fallbackError);
+              return null;
+            }
+          }
+          
           return null;
         }
       }

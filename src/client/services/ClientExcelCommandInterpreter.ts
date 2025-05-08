@@ -11,11 +11,128 @@ import {
   RecalculateRangesOperation
 } from '../models/ExcelOperationModels';
 import * as ExcelUtils from '../utils/ExcelUtils';
+import { ActionRecorder } from './versioning/ActionRecorder';
+import { VersionHistoryService } from './versioning/VersionHistoryService';
+import { PendingChangesTracker } from './PendingChangesTracker';
+import { ShapeEventHandler } from './ShapeEventHandler';
 
 /**
  * Service that interprets and executes Excel operations using Office.js
  */
 export class ClientExcelCommandInterpreter {
+  private actionRecorder: ActionRecorder | null = null;
+  private pendingChangesTracker: PendingChangesTracker | null = null;
+  private shapeEventHandler: ShapeEventHandler | null = null;
+  private currentWorkbookId: string = '';
+  private requireApproval: boolean = false;
+  
+  /**
+   * Set the action recorder for version history tracking
+   * @param actionRecorder The action recorder instance
+   */
+  public setActionRecorder(actionRecorder: ActionRecorder): void {
+    console.log(`🔄 [ClientExcelCommandInterpreter] Setting ActionRecorder instance`);
+    this.actionRecorder = actionRecorder;
+  }
+  
+  /**
+   * Set the pending changes tracker for AI-generated changes approval
+   * @param pendingChangesTracker The pending changes tracker instance
+   * @param shapeEventHandler The shape event handler instance
+   */
+  public setPendingChangesTracker(pendingChangesTracker: PendingChangesTracker, shapeEventHandler: ShapeEventHandler): void {
+    console.log(`🔄 [ClientExcelCommandInterpreter] Setting PendingChangesTracker instance`);
+    this.pendingChangesTracker = pendingChangesTracker;
+    this.shapeEventHandler = shapeEventHandler;
+    
+    // Start polling for shape selection events
+    this.shapeEventHandler.startPolling();
+  }
+  
+  /**
+   * Enable or disable the approval workflow for AI-generated changes
+   * @param enable Whether to enable the approval workflow
+   */
+  public setRequireApproval(enable: boolean): void {
+    console.log(`🔄 [ClientExcelCommandInterpreter] ${enable ? 'Enabling' : 'Disabling'} approval workflow for AI-generated changes`);
+    this.requireApproval = enable;
+  }
+  
+  /**
+   * Get the current action recorder instance
+   * @returns The current action recorder instance or null if not set
+   */
+  public getActionRecorder(): ActionRecorder | null {
+    return this.actionRecorder;
+  }
+  
+  /**
+   * Set the current workbook ID for version history tracking
+   * @param workbookId The current workbook ID
+   */
+  public setCurrentWorkbookId(workbookId: string): void {
+    console.log(`🔄 [ClientExcelCommandInterpreter] Setting current workbook ID: ${workbookId}`);
+    this.currentWorkbookId = workbookId;
+  }
+  
+  /**
+   * Get the current workbook ID
+   * @returns The current workbook ID or empty string if not set
+   */
+  public getCurrentWorkbookId(): string {
+    return this.currentWorkbookId;
+  }
+  
+  /**
+   * Creates a unique fingerprint for an operation based on its properties
+   * This helps detect duplicate operations even if they have different IDs
+   * @param operation The Excel operation to create a fingerprint for
+   * @returns A string fingerprint that uniquely identifies this operation
+   * @private
+   */
+  private createOperationFingerprint(operation: ExcelOperation): string {
+    // Extract key properties that identify an operation
+    const opType = operation.op || 'unknown';
+    
+    // Safely extract properties based on operation type
+    let targetOrRange = '';
+    let valueOrFormula = '';
+    let formatInfo = '';
+    
+    // Get properties safely using type assertion
+    const op = operation as any;
+    
+    // Extract common properties based on operation type string
+    if (opType === 'set_value') {
+      targetOrRange = op.target || '';
+      valueOrFormula = op.value !== undefined ? String(op.value) : '';
+    } 
+    else if (opType === 'add_formula') {
+      targetOrRange = op.target || '';
+      valueOrFormula = op.formula || '';
+    }
+    else if (opType === 'format_range') {
+      targetOrRange = op.range || '';
+      formatInfo = op.style || '';
+    }
+    else if (opType === 'create_sheet') {
+      valueOrFormula = op.name || '';
+    }
+    else if (['delete_sheet', 'rename_sheet', 'set_active_sheet'].includes(opType)) {
+      targetOrRange = op.name || op.sheet || '';
+    }
+    else {
+      // For other operations, try to get common properties
+      targetOrRange = op.target || op.range || op.sheet || '';
+      valueOrFormula = op.value || op.formula || op.name || '';
+    }
+    
+    // Create a fingerprint string that combines these properties
+    const fingerprint = `${opType}:${targetOrRange}:${valueOrFormula}:${formatInfo}`;
+    
+    return fingerprint;
+  }
+  
   /**
    * Execute a command plan with multiple operations
    * @param plan The Excel command plan to execute
@@ -57,6 +174,46 @@ export class ClientExcelCommandInterpreter {
       return;
     }
     
+    // Create a unique ID for this batch of operations for tracking
+    const batchId = Math.random().toString(36).substring(2, 10);
+    
+    // Log details about the operations being executed
+    console.log(`📣 [ClientExcelCommandInterpreter] executeOperations called with ${operations.length} operations (batch: ${batchId})`);
+    
+    // Track operation IDs to detect duplicates within this batch
+    const operationIds = new Set<string>();
+    const operationsByType = new Map<string, number>();
+    
+    // Log each operation
+    operations.forEach((op, index) => {
+      const opType = op.op || 'unknown';
+      const opId = op.id || 'no-id';
+      
+      // Count operations by type
+      const typeCount = operationsByType.get(opType) || 0;
+      operationsByType.set(opType, typeCount + 1);
+      
+      // Check for duplicate IDs within this batch
+      if (opId !== 'no-id') {
+        if (operationIds.has(opId)) {
+          console.warn(`⚠️ [ClientExcelCommandInterpreter] Duplicate operation ID ${opId} within batch ${batchId}`);
+        } else {
+          operationIds.add(opId);
+        }
+      }
+      
+      // Log operation details for the first 5 operations (to avoid excessive logging)
+      if (index < 5) {
+        console.log(`📝 [ClientExcelCommandInterpreter] Operation ${index} in batch ${batchId}: ${opType} (ID: ${opId})`);
+      }
+    });
+    
+    // Log summary of operation types
+    console.log(`📊 [ClientExcelCommandInterpreter] Operations by type in batch ${batchId}:`, 
+      Array.from(operationsByType.entries())
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(', '));
+    
     try {
       await Excel.run(async (context) => {
         for (const operation of operations) {
@@ -66,9 +223,9 @@ export class ClientExcelCommandInterpreter {
         await context.sync();
       });
       
-      console.log('All operations executed successfully');
+      console.log(`✅ [ClientExcelCommandInterpreter] All operations in batch ${batchId} executed successfully`);
     } catch (error) {
-      console.error('Error executing Excel operations:', error);
+      console.error(`❌ [ClientExcelCommandInterpreter] Error executing Excel operations in batch ${batchId}:`, error);
       throw error;
     }
   }
@@ -199,13 +356,58 @@ export class ClientExcelCommandInterpreter {
   }
 
   private async executeOperation(context: Excel.RequestContext, operation: ExcelOperation): Promise<void> {
-    console.log(`Executing operation: ${operation.op}`);
+    // Generate a unique execution ID for this operation execution
+    const executionId = Math.random().toString(36).substring(2, 10);
+    const opId = operation.id || 'no-id';
+    const opType = operation.op || 'unknown';
+    
+    // Create a fingerprint for this operation
+    const fingerprint = this.createOperationFingerprint(operation);
+    
+    // Record the operation for version history if action recorder is available
+    console.log(`🔄 [ClientExcelCommandInterpreter] Executing operation: ${opType} (ID: ${opId}, Execution: ${executionId}, Fingerprint: ${fingerprint})`);
+    
+    // Variable to track if this operation requires approval
+    let requiresApproval = false;
+    let pendingChangeId = '';
+    
+    // Check if this operation requires approval
+    if (this.requireApproval && this.pendingChangesTracker && this.currentWorkbookId) {
+      console.log(`🔍 [ClientExcelCommandInterpreter] Operation requires approval: ${opType} (ID: ${opId})`);
+      
+      // Track the operation as a pending change
+      const pendingChange = this.pendingChangesTracker.trackChange(this.currentWorkbookId, operation);
+      pendingChangeId = pendingChange.id;
+      requiresApproval = true;
+      console.log(`✅ [ClientExcelCommandInterpreter] Added operation to pending changes: ${pendingChange.id}`);
+      
+      // Continue with execution to show the changes to the user
+      // The changes will be highlighted to indicate they are pending approval
+    }
+    
+    // If no approval required or approval system not set up, proceed with normal execution
+    if (this.actionRecorder && this.currentWorkbookId) {
+      console.log(`📝 [ClientExcelCommandInterpreter] Recording operation ${opType} for workbook: ${this.currentWorkbookId} (Execution: ${executionId})`);
+      try {
+        // Record the operation before executing it
+        await this.actionRecorder.recordOperation(context, this.currentWorkbookId, operation);
+        console.log(`✅ [ClientExcelCommandInterpreter] Successfully recorded operation ${opType} (Execution: ${executionId})`);
+      } catch (error) {
+        // Log error but continue with operation execution
+        console.error(`❌ [ClientExcelCommandInterpreter] Error recording operation for version history (Execution: ${executionId}):`, error);
+      }
+    } else {
+      if (!this.actionRecorder) {
+        console.warn(`⚠️ [ClientExcelCommandInterpreter] Cannot record operation: ActionRecorder not set (Execution: ${executionId})`);
+      }
+      if (!this.currentWorkbookId) {
+        console.warn(`⚠️ [ClientExcelCommandInterpreter] Cannot record operation: workbookId not set (Execution: ${executionId})`);
+      }
+    }
     
     try {
+      // Execute the operation based on its type
       switch (operation.op) {
-        case ExcelOperationType.SET_ROW_COLUMN_OPTIONS:
-          await this.executeSetRowColumnOptions(context, operation);
-          break;
         case ExcelOperationType.SET_VALUE:
           await this.executeSetValue(context, operation);
           break;
@@ -327,6 +529,34 @@ export class ClientExcelCommandInterpreter {
         default:
           console.warn(`Unsupported operation: ${(operation as any).op}`);
       }
+      
+      // Apply highlighting if this operation requires approval
+      if (requiresApproval && this.pendingChangesTracker && pendingChangeId && this.currentWorkbookId) {
+        console.log(`🎨 [ClientExcelCommandInterpreter] Applying highlighting for pending change: ${pendingChangeId}`);
+        try {
+          // Since we just created the pending change, we know it exists
+          // We'll apply highlighting to all pending changes for the current workbook
+          // This ensures the cells are properly highlighted
+          await Excel.run(async (context) => {
+            // Extract affected ranges from the operation
+            const affectedRanges = this.getAffectedRanges(operation);
+            
+            // Apply green highlighting to all affected ranges
+            for (const rangeAddress of affectedRanges) {
+              const { sheet, address } = this.parseReference(rangeAddress);
+              const range = context.workbook.worksheets.getItem(sheet).getRange(address);
+              range.format.fill.color = "#DDFFDD"; // Light green
+            }
+            
+            await context.sync();
+          });
+          
+          console.log(`✅ [ClientExcelCommandInterpreter] Successfully highlighted affected ranges for pending change: ${pendingChangeId}`);
+        } catch (highlightError) {
+          // Log error but don't fail the operation
+          console.error(`❌ [ClientExcelCommandInterpreter] Error highlighting pending change: ${highlightError instanceof Error ? highlightError.message : String(highlightError)}`);
+        }
+      }
     } catch (error) {
       console.error(`Error executing operation ${operation.op}:`, error);
       throw error;
@@ -348,6 +578,70 @@ export class ClientExcelCommandInterpreter {
       sheet: parts[0],
       address: parts[1]
     };
+  }
+  
+  /**
+   * Extract affected ranges from an operation
+   * @param operation The Excel operation
+   * @returns Array of affected range addresses (e.g., "Sheet1!A1:B10")
+   */
+  private getAffectedRanges(operation: ExcelOperation): string[] {
+    const affectedRanges: string[] = [];
+    const op = operation as any;
+    
+    switch (operation.op) {
+      case ExcelOperationType.SET_VALUE:
+      case ExcelOperationType.ADD_FORMULA:
+        if (op.target) {
+          affectedRanges.push(op.target);
+        }
+        break;
+        
+      case ExcelOperationType.FORMAT_RANGE:
+      case ExcelOperationType.CLEAR_RANGE:
+      case ExcelOperationType.SORT_RANGE:
+      case ExcelOperationType.FILTER_RANGE:
+      case ExcelOperationType.MERGE_CELLS:
+      case ExcelOperationType.UNMERGE_CELLS:
+      case ExcelOperationType.CONDITIONAL_FORMAT:
+        if (op.range) {
+          affectedRanges.push(op.range);
+        }
+        break;
+        
+      case ExcelOperationType.COPY_RANGE:
+        if (op.source) {
+          affectedRanges.push(op.source);
+        }
+        if (op.destination) {
+          affectedRanges.push(op.destination);
+        }
+        break;
+        
+      case ExcelOperationType.CREATE_TABLE:
+        if (op.range) {
+          affectedRanges.push(op.range);
+        }
+        break;
+        
+      case ExcelOperationType.CREATE_CHART:
+        if (op.dataRange) {
+          affectedRanges.push(op.dataRange);
+        }
+        break;
+        
+      // For sheet-level operations, we don't have specific ranges to highlight
+      // For other operations, try to extract any range-like properties
+      default:
+        // Try to find any properties that might contain range references
+        for (const key of ['range', 'target', 'source', 'destination', 'dataRange']) {
+          if (op[key] && typeof op[key] === 'string' && op[key].includes('!')) {
+            affectedRanges.push(op[key]);
+          }
+        }
+    }
+    
+    return affectedRanges;
   }
   
   /**
@@ -462,6 +756,9 @@ export class ClientExcelCommandInterpreter {
           break;
         case 'actual_year':
           formatString = '#"A"';
+          break;
+        case 'number':
+          formatString = '0.00';
           break;
         default:
           formatString = op.style;

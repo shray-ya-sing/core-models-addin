@@ -13,10 +13,21 @@ export class ClientCommandManager {
   private workbookStateManager: ClientWorkbookStateManager | null = null;
   private commandUpdateListeners: ((command: Command) => void)[] = [];
 
-  constructor(commandExecutor: ClientCommandExecutor, workbookStateManager?: ClientWorkbookStateManager) {
+  /**
+   * Create a new ClientCommandManager
+   * @param commandExecutor The command executor to use
+   * @param workbookStateManager Optional workbook state manager
+   * @param excelCommandAdapter Optional existing adapter instance to use. If not provided, a new one will be created.
+   */
+  constructor(
+    commandExecutor: ClientCommandExecutor, 
+    workbookStateManager?: ClientWorkbookStateManager,
+    excelCommandAdapter?: ClientExcelCommandAdapter
+  ) {
     this.commandExecutor = commandExecutor;
-    this.excelCommandAdapter = new ClientExcelCommandAdapter();
+    this.excelCommandAdapter = excelCommandAdapter || new ClientExcelCommandAdapter();
     this.workbookStateManager = workbookStateManager || null;
+    console.log(`🔄 [ClientCommandManager] Using ${excelCommandAdapter ? 'provided' : 'new'} adapter instance`);
   }
 
   /**
@@ -183,10 +194,15 @@ export class ClientCommandManager {
   }
 
   public async executeCommand(commandId: string): Promise<void> {
-    const command = this.commands.get(commandId);
+    console.log(`🔍 [ClientCommandManager] executeCommand called with ID: ${commandId}`);
+    
+    const command = this.getCommand(commandId);
     if (!command) {
-      throw new Error(`Command not found: ${commandId}`);
+      throw new Error(`Command with ID ${commandId} not found`);
     }
+    
+    console.log(`📋 [ClientCommandManager] Executing command: ${command.description} (ID: ${commandId})`);
+    console.log(`🔢 [ClientCommandManager] Command has ${command.steps.length} steps with ${command.steps.reduce((total, step) => total + step.operations.length, 0)} total operations`);
     
     try {
       // Update command status to running

@@ -9,6 +9,7 @@
 export const config = {
   // API keys
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
   
   // API endpoints
   knowledgeBaseApiUrl: process.env.KNOWLEDGE_BASE_API_URL || 'http://localhost:8000/api/search/unified',
@@ -28,6 +29,7 @@ if (config.debugMode) {
   console.log('Client configuration loaded:', {
     ...config,
     anthropicApiKey: config.anthropicApiKey ? '[REDACTED]' : 'Not set',
+    openaiApiKey: config.openaiApiKey ? '[REDACTED]' : 'Not set',
   });
 }
 

@@ -382,7 +382,7 @@ export const FinancialModelChat: React.FC = () => {
         // Initialize services
         const stateManager = new ClientWorkbookStateManager();
         const compressor = new ClientSpreadsheetCompressor();
-        const anthropic = new ClientAnthropicService(config.anthropicApiKey);
+        const anthropic = new ClientAnthropicService(config.anthropicApiKey, config.openaiApiKey);
         const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
         
         // Initialize command execution system

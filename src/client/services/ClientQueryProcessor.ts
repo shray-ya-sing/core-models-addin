@@ -269,15 +269,6 @@ export class ClientQueryProcessor {
                   "I'm sorry, I'm not sure how to handle that request yet."
               };
             }        
-          default:
-            console.log(`%c Encountered unknown query type: ${queryType}`, 'background: #c0392b; color: #fff; font-size: 12px; padding: 2px 5px;');
-            console.timeEnd('Query processing time');
-            console.groupEnd();
-            return {
-              processId,
-              assistantMessage:
-                "I'm sorry, I'm not sure how to handle that request yet."
-            };
         }
       }
       
