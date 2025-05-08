@@ -3,7 +3,8 @@
  * Integrates with LLMs for formatting analysis
  */
 import { performMultimodalAnalysis } from './WorkbookUtils';
-import { FormattingProtocolAnalyzer, FormattingProtocol, WorkbookFormattingMetadata } from './FormattingProtocolAnalyzer';
+import { FormattingProtocolAnalyzer } from './FormattingProtocolAnalyzer';
+import { FormattingProtocol, WorkbookFormattingMetadata } from './FormattingModels';
 import { ClientAnthropicService } from '../ClientAnthropicService';
 
 // Types for the multimodal analysis options
@@ -35,6 +36,18 @@ export class MultimodalAnalysisService {
   private apiEndpoint: string;
   private analysisResults: Map<string, MultimodalAnalysisResult> = new Map();
   private formattingProtocolAnalyzer: FormattingProtocolAnalyzer | null = null;
+  
+  // Track formatting protocols per workbook
+  private workbookFormattingProtocols: Map<string, {
+    formattingProtocol: FormattingProtocol;
+    formattingMetadata: WorkbookFormattingMetadata;
+    timestamp: string;
+  }> = new Map();
+  
+  // Current workbook tracking
+  private currentWorkbookId: string = '';
+  
+  // Legacy cache variables - kept for backward compatibility
   private cachedFormattingProtocol: FormattingProtocol | null = null;
   private cachedFormattingMetadata: WorkbookFormattingMetadata | null = null;
   private lastAnalysisTimestamp: string = '';
@@ -53,6 +66,163 @@ export class MultimodalAnalysisService {
     // Initialize the formatting protocol analyzer if Anthropic service is provided
     if (anthropicService) {
       this.formattingProtocolAnalyzer = new FormattingProtocolAnalyzer(anthropicService);
+    }
+  }
+  
+  /**
+   * Sets the current workbook ID and ensures its formatting is analyzed
+   * @param workbookId The ID of the current workbook
+   * @returns Promise that resolves when the workbook's formatting has been analyzed
+   */
+  public async setWorkbookAndEnsureFormatting(workbookId: string): Promise<void> {
+    // If this is a different workbook than the current one
+    if (this.currentWorkbookId !== workbookId) {
+      console.log(`Setting current workbook to: ${workbookId}`);
+      this.currentWorkbookId = workbookId;
+      
+      // Check if we've already analyzed this workbook
+      if (!this.hasWorkbookFormatting(workbookId)) {
+        console.log(`Analyzing formatting protocol for workbook: ${workbookId}`);
+        
+        try {
+          // Analyze the formatting protocol for this workbook
+          const formattingProtocol = await this.analyzeFormattingProtocol();
+          
+          // Store the formatting protocol for this workbook
+          this.workbookFormattingProtocols.set(workbookId, {
+            formattingProtocol,
+            formattingMetadata: this.cachedFormattingMetadata!,
+            timestamp: new Date().toISOString()
+          });
+          
+          console.log(`Formatting protocol analysis complete for workbook: ${workbookId}`);
+        } catch (error) {
+          console.error(`Error analyzing formatting protocol for workbook ${workbookId}:`, error);
+          throw error;
+        }
+      } else {
+        console.log(`Using cached formatting protocol for workbook: ${workbookId}`);
+        
+        // Update the legacy cache variables for backward compatibility
+        const workbookData = this.workbookFormattingProtocols.get(workbookId)!;
+        this.cachedFormattingProtocol = workbookData.formattingProtocol;
+        this.cachedFormattingMetadata = workbookData.formattingMetadata;
+        this.lastAnalysisTimestamp = workbookData.timestamp;
+      }
+    }
+  }
+  
+  /**
+   * Checks if a workbook's formatting has been analyzed
+   * @param workbookId The ID of the workbook to check
+   * @returns True if the workbook's formatting has been analyzed
+   */
+  private hasWorkbookFormatting(workbookId: string): boolean {
+    return this.workbookFormattingProtocols.has(workbookId);
+  }
+  
+  /**
+   * Gets the complete formatting data for a specific workbook
+   * @param workbookId The ID of the workbook
+   * @returns The complete formatting data for the workbook, or undefined if not available
+   */
+  public getWorkbookFormattingData(workbookId: string): {
+    formattingProtocol: FormattingProtocol;
+    formattingMetadata: WorkbookFormattingMetadata;
+    timestamp: string;
+  } | undefined {
+    return this.workbookFormattingProtocols.get(workbookId);
+  }
+  
+  /**
+   * Gets the formatting protocol for the current workbook
+   * @returns The formatting protocol for the current workbook or null if not available
+   */
+  public getWorkbookFormattingProtocol(workbookId?: string): FormattingProtocol | null {
+    const id = workbookId || this.currentWorkbookId;
+    
+    if (!id || !this.hasWorkbookFormatting(id)) {
+      return null;
+    }
+    
+    return this.workbookFormattingProtocols.get(id)!.formattingProtocol;
+  }
+  
+  /**
+   * Gets the formatting metadata for the current workbook
+   * @returns The formatting metadata for the current workbook or null if not available
+   */
+  public getWorkbookFormattingMetadata(workbookId?: string): WorkbookFormattingMetadata | null {
+    const id = workbookId || this.currentWorkbookId;
+    
+    if (!id || !this.hasWorkbookFormatting(id)) {
+      return null;
+    }
+    
+    return this.workbookFormattingProtocols.get(id)!.formattingMetadata;
+  }
+  
+  /**
+   * Registers a workbook change to invalidate cached formatting
+   * @param workbookId The ID of the workbook that changed
+   */
+  public registerWorkbookChange(workbookId: string): void {
+    // Remove the workbook's formatting from the cache to force a re-analysis
+    if (this.hasWorkbookFormatting(workbookId)) {
+      console.log(`Invalidating formatting protocol for workbook: ${workbookId}`);
+      this.workbookFormattingProtocols.delete(workbookId);
+      
+      // If this is the current workbook, also clear the legacy cache
+      if (workbookId === this.currentWorkbookId) {
+        this.cachedFormattingProtocol = null;
+        this.cachedFormattingMetadata = null;
+        this.lastAnalysisTimestamp = '';
+      }
+    }
+  }
+  
+  /**
+   * Refreshes images for a specific sheet without re-analyzing the formatting protocol
+   * @param workbookId The ID of the workbook containing the sheet
+   * @param sheetName The name of the sheet to refresh
+   * @returns Promise that resolves when the sheet images have been refreshed
+   */
+  public async refreshSheetImages(workbookId: string, sheetName: string): Promise<void> {
+    console.log(`Refreshing images for sheet: ${sheetName} in workbook: ${workbookId}`);
+    
+    try {
+      // Find any cached analysis results for this workbook
+      const analysisResults: MultimodalAnalysisResult[] = [];
+      this.analysisResults.forEach((result) => {
+        // Check if this result might be for the current workbook
+        // We don't have a direct workbookId in the results, so we'll refresh all results
+        // that include this sheet
+        const includesSheet = result.metadata.options?.sheets?.includes(sheetName);
+        if (includesSheet) {
+          analysisResults.push(result);
+        }
+      });
+      
+      if (analysisResults.length === 0) {
+        console.log(`No cached analysis results found for sheet: ${sheetName}`);
+        return;
+      }
+      
+      // Refresh the images for this specific sheet
+      const refreshedImages = await performMultimodalAnalysis(this.apiEndpoint, {
+        sheets: [sheetName]
+      });
+      
+      // Update the cached results with the new images
+      for (const result of analysisResults) {
+        // Replace the images in the result
+        result.images = refreshedImages;
+        result.metadata.timestamp = new Date().toISOString();
+      }
+      
+      console.log(`Successfully refreshed images for sheet: ${sheetName}`);
+    } catch (error) {
+      console.error(`Error refreshing images for sheet: ${sheetName}:`, error);
     }
   }
 
@@ -88,51 +258,71 @@ export class MultimodalAnalysisService {
   }
   
   /**
-   * Analyzes the formatting protocol of the active workbook using LLM
+   * Analyzes the formatting protocol of the active workbook
    * @returns Promise with the formatting protocol analysis
    */
   public async analyzeFormattingProtocol(): Promise<FormattingProtocol> {
     try {
-      // Check if we have a cached protocol that's still valid
+      // Check if we have a cached protocol for the current workbook
+      if (this.currentWorkbookId && this.hasWorkbookFormatting(this.currentWorkbookId)) {
+        console.log(`Using cached formatting protocol for workbook: ${this.currentWorkbookId}`);
+        return this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingProtocol;
+      }
+      
+      // For backward compatibility, also check the legacy cache
       if (this.cachedFormattingProtocol && this.isFormattingProtocolValid()) {
-        console.log('Using cached formatting protocol');
+        console.log('Using legacy cached formatting protocol');
         return this.cachedFormattingProtocol;
       }
       
-      // Ensure we have the formatting protocol analyzer
-      if (!this.formattingProtocolAnalyzer) {
-        throw new Error('Formatting protocol analyzer not initialized. Please provide an Anthropic service when creating the MultimodalAnalysisService.');
+      console.log(`Analyzing formatting protocol for workbook: ${this.currentWorkbookId}`);
+      
+      // Step 1: Extract formatting metadata (this doesn't require the API)
+      const formattingMetadata = await this.formattingProtocolAnalyzer.extractFormattingMetadata();
+      console.log('Successfully extracted formatting metadata');
+      
+      // Step 2: Get workbook images for all sheets
+      const worksheetNames = await this.getAllWorksheetNames();
+      console.log(`Requesting images for all ${worksheetNames.length} sheets in workbook`);
+      
+      // Request images for all sheets explicitly
+      // We now require the API to be available - no fallback to placeholder images
+      const images = await performMultimodalAnalysis(this.apiEndpoint, {
+        sheets: worksheetNames
+      });
+      console.log(`Successfully retrieved ${images.length} images for analysis`);
+      
+      // Step 3: Analyze formatting protocol using the LLM
+      // In our refactored implementation, the analyzeFormattingProtocol method handles images and metadata internally
+      const formattingProtocol = await this.formattingProtocolAnalyzer.analyzeFormattingProtocol();
+      
+      // Step 4: Store in the workbook-specific cache
+      if (this.currentWorkbookId) {
+        this.workbookFormattingProtocols.set(this.currentWorkbookId, {
+          formattingProtocol,
+          formattingMetadata,
+          timestamp: new Date().toISOString()
+        });
       }
       
-      // Step 1: Get workbook images for all sheets
-      const images = await performMultimodalAnalysis(this.apiEndpoint);
-      
-      // Step 2: Extract formatting metadata
-      const formattingMetadata = await this.formattingProtocolAnalyzer.extractFormattingMetadata();
-      
-      // Step 3: Analyze the formatting protocol using LLM
-      const formattingProtocol = await this.formattingProtocolAnalyzer.analyzeFormattingProtocol(
-        images,
-        formattingMetadata
-      );
-      
-      // Cache the results
+      // Also update the legacy cache for backward compatibility
       this.cachedFormattingProtocol = formattingProtocol;
       this.cachedFormattingMetadata = formattingMetadata;
       this.lastAnalysisTimestamp = new Date().toISOString();
       
-      // Store in analysis results
+      // Store in analysis results for backward compatibility
       const analysisId = `formatting_protocol_${Date.now()}`;
       this.analysisResults.set(analysisId, {
         images,
         formattingAnalysis: formattingProtocol,
-        formattingMetadata: formattingMetadata,
+        formattingMetadata,
         metadata: {
           timestamp: this.lastAnalysisTimestamp,
           sheetCount: formattingMetadata.sheets.length
         }
       });
       
+      console.log(`Formatting protocol analysis complete for workbook: ${this.currentWorkbookId}`);
       return formattingProtocol;
     } catch (error) {
       console.error('Error analyzing formatting protocol:', error);
@@ -159,10 +349,36 @@ export class MultimodalAnalysisService {
   }
   
   /**
+   * Checks if a workbook's formatting protocol is still valid
+   * @param workbookId The ID of the workbook to check
+   * @returns True if the protocol is valid, false otherwise
+   */
+  private isWorkbookFormattingValid(workbookId: string): boolean {
+    // If no formatting for this workbook, it's not valid
+    if (!this.hasWorkbookFormatting(workbookId)) {
+      return false;
+    }
+    
+    // Check if the protocol is less than 1 hour old
+    const now = new Date();
+    const workbookData = this.workbookFormattingProtocols.get(workbookId)!;
+    const lastAnalysis = new Date(workbookData.timestamp);
+    const hourInMs = 60 * 60 * 1000;
+    
+    return (now.getTime() - lastAnalysis.getTime()) < hourInMs;
+  }
+  
+  /**
    * Gets the cached formatting protocol if available
    * @returns The cached formatting protocol or null if not available
    */
   public getCachedFormattingProtocol(): FormattingProtocol | null {
+    // First try to get the formatting protocol for the current workbook
+    if (this.currentWorkbookId && this.isWorkbookFormattingValid(this.currentWorkbookId)) {
+      return this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingProtocol;
+    }
+    
+    // Fall back to the legacy cache for backward compatibility
     return this.isFormattingProtocolValid() ? this.cachedFormattingProtocol : null;
   }
   
@@ -171,6 +387,12 @@ export class MultimodalAnalysisService {
    * @returns The cached formatting metadata or null if not available
    */
   public getCachedFormattingMetadata(): WorkbookFormattingMetadata | null {
+    // First try to get the formatting metadata for the current workbook
+    if (this.currentWorkbookId && this.isWorkbookFormattingValid(this.currentWorkbookId)) {
+      return this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingMetadata;
+    }
+    
+    // Fall back to the legacy cache for backward compatibility
     return this.isFormattingProtocolValid() ? this.cachedFormattingMetadata : null;
   }
   
@@ -178,6 +400,12 @@ export class MultimodalAnalysisService {
    * Invalidates the cached formatting protocol
    */
   public invalidateFormattingProtocol(): void {
+    // If we have a current workbook, invalidate its formatting
+    if (this.currentWorkbookId) {
+      this.registerWorkbookChange(this.currentWorkbookId);
+    }
+    
+    // Also invalidate the legacy cache for backward compatibility
     this.cachedFormattingProtocol = null;
     this.cachedFormattingMetadata = null;
     this.lastAnalysisTimestamp = '';
@@ -217,9 +445,23 @@ export class MultimodalAnalysisService {
   private async getWorksheetCount(): Promise<number> {
     return Excel.run(async (context) => {
       const worksheets = context.workbook.worksheets;
-      worksheets.load("items");
+      worksheets.load('items');
       await context.sync();
       return worksheets.items.length;
+    });
+  }
+  
+  /**
+   * Gets the names of all worksheets in the active workbook
+   * @returns Promise with array of worksheet names
+   */
+  private async getAllWorksheetNames(): Promise<string[]> {
+    return Excel.run(async (context) => {
+      const worksheets = context.workbook.worksheets;
+      worksheets.load('items/name');
+      await context.sync();
+      
+      return worksheets.items.map(sheet => sheet.name);
     });
   }
 
@@ -246,16 +488,27 @@ export const multimodalAnalysisService = new MultimodalAnalysisService();
 /**
  * Initialize the multimodal analysis service with the Anthropic service
  * @param anthropicService The Anthropic service instance
+ * @param workbookId Optional current workbook ID
  */
-export function initializeMultimodalAnalysisService(anthropicService: ClientAnthropicService): void {
-  // Create a new instance with the Anthropic service
+export function initializeMultimodalAnalysisService(
+  anthropicService: ClientAnthropicService,
+  workbookId?: string
+): void {
+  // Create a new service with the provided Anthropic service
   const newService = new MultimodalAnalysisService(
     DEFAULT_IMAGE_CONVERSION_ENDPOINT,
     anthropicService
   );
   
-  // Copy properties from the new service to the singleton
+  // Replace the singleton instance with the new service
   Object.assign(multimodalAnalysisService, newService);
   
-  console.log('Multimodal analysis service initialized with Anthropic service');
+  // If a workbook ID was provided, set it as the current workbook
+  if (workbookId) {
+    // We don't await this since it's an initialization function
+    // The formatting will be analyzed when needed
+    multimodalAnalysisService.setWorkbookAndEnsureFormatting(workbookId);
+  }
+  
+  console.log('Multimodal analysis service initialized successfully');
 }

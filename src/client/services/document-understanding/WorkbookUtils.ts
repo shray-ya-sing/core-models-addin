@@ -83,6 +83,8 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+
+
 /**
  * Sends a workbook to the specified API endpoint for image conversion
  * @param workbookBase64 Base64 encoded workbook
@@ -100,17 +102,44 @@ export async function getWorkbookImagesForMultimodalAnalysis(
   }
 ): Promise<string[]> {
   try {
-    // Prepare the request payload according to the endpoint's expected format
+    console.log(`Attempting to connect to image conversion API at: ${apiEndpoint}`);
+    
+    // Check API health first with a timeout to avoid long waits
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const healthCheck = await fetch(`${apiEndpoint.replace('/export', '')}/health`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!healthCheck.ok) {
+        console.warn(`API health check failed: ${healthCheck.status} ${healthCheck.statusText}`);
+        throw new Error(`Excel Image API health check failed with status: ${healthCheck.status}`);
+      }
+      
+      console.log('API health check successful, proceeding with image conversion');
+    } catch (healthError) {
+      console.warn(`API health check failed: ${healthError.message}`);
+      throw new Error(`Excel Image API unavailable: ${healthError.message}`);
+    }
+    
+    // Prepare the request payload according to the documented API format
     const payload: any = {
+      // Use 'ExcelFile' as per documentation
       ExcelFile: workbookBase64
     };
     
     // Add optional parameters if provided
     if (options?.sheets && options.sheets.length > 0) {
+      // Use 'Sheets' as per documentation
       payload.Sheets = options.sheets;
     }
     
     if (options?.charts && options.charts.length > 0) {
+      // Use 'Charts' with 'SheetName' and 'ChartIndex' as per documentation
       payload.Charts = options.charts.map(chart => ({
         SheetName: chart.sheetName,
         ChartIndex: chart.chartIndex
@@ -118,28 +147,64 @@ export async function getWorkbookImagesForMultimodalAnalysis(
     }
     
     if (options?.ranges && options.ranges.length > 0) {
+      // Use 'Ranges' with 'SheetName' and 'Range' as per documentation
       payload.Ranges = options.ranges.map(range => ({
         SheetName: range.sheetName,
         Range: range.range
       }));
     }
     
-    // Send to API endpoint for image conversion
-    const response = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    // Send to API endpoint for image conversion with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        console.warn(`API error: ${response.status} ${response.statusText}`);
+        throw new Error(`Excel Image API returned error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Parse the response according to the documented API format
+      const result = await response.json();
+      
+      // Handle different possible response formats
+      if (result.Images && Array.isArray(result.Images)) {
+        // Format from documentation: { Images: [{ Name: string, Base64Image: string }] }
+        console.log(`Received ${result.Images.length} images from the API in documented format`);
+        
+        // Extract the Base64Image values from each image object
+        return result.Images.map((img: { Name: string; Base64Image: string }) => {
+          console.log(`Processing image: ${img.Name}`);
+          return img.Base64Image;
+        });
+      } else if (Array.isArray(result)) {
+        // Format actually returned: direct array of base64 strings
+        console.log(`Received ${result.length} images from the API in array format`);
+        return result;
+      } else if (result.images && Array.isArray(result.images)) {
+        // Alternative format: { images: string[] }
+        console.log(`Received ${result.images.length} images from the API in lowercase format`);
+        return result.images;
+      } else {
+        console.warn('Unexpected API response format:', result);
+        throw new Error('Unexpected API response format. Expected Images array or direct array of base64 strings.');
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      console.warn(`API fetch error: ${fetchError.message}`);
+      throw new Error(`Excel Image API fetch error: ${fetchError.message}`);
     }
-    
-    // Get array of base64 images from response
-    const result = await response.json();
-    return result.images; // Assuming the API returns { images: string[] }
     
   } catch (error) {
     console.error('Error in multimodal analysis:', error);

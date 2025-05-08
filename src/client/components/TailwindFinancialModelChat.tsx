@@ -13,6 +13,7 @@ import { ClientExcelCommandInterpreter } from '../services/ClientExcelCommandInt
 import { ClientAnthropicService } from '../services/ClientAnthropicService';
 import { ClientKnowledgeBaseService } from '../services/ClientKnowledgeBaseService';
 import { ClientQueryProcessor, QueryProcessorResult } from '../services/ClientQueryProcessor';
+import { initializeMultimodalAnalysisService } from '../services/document-understanding/MultimodalAnalysisService';
 import { VersionHistoryProvider } from '../services/versioning/VersionHistoryProvider';
 import { VersionEventType } from '../models/VersionModels';
 import { Command, CommandStatus } from '../models/CommandModels';
@@ -271,8 +272,16 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           commandManager: manager
         });
         
+        // Initialize the multimodal analysis service with the Anthropic service and current workbook ID
+        console.log(`🔄 [TailwindFinancialModelChat] Initializing multimodal analysis service for workbook: ${workbookId}`);
+        initializeMultimodalAnalysisService(anthropic, workbookId);
+        
         // Set up event listeners for workbook changes
         await stateManager.setupChangeListeners();
+        
+        // Initialize the version history provider with the current workbook ID
+        console.log(`🔄 [TailwindFinancialModelChat] Setting workbook ID in version history provider: ${workbookId}`);
+        versionHistoryProviderRef.current.setCurrentWorkbookId(workbookId);
         
         // Initialize AI Approval System
         console.log(`🔄 [TailwindFinancialModelChat] Initializing AI approval system...`);

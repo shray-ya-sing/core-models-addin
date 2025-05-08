@@ -727,6 +727,53 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
   }
   
   /**
+   * Generate a response using multimodal content (text and images)
+   * @param content Array of content objects (text and images)
+   * @param systemPrompt System prompt to guide the model's response
+   * @param model Optional model to use (defaults to advanced model)
+   * @returns The generated response
+   */
+  public async generateMultimodalResponse(
+    content: Array<any>,
+    systemPrompt: string,
+    model?: string
+  ): Promise<any> {
+    try {
+      // Use the specified model or default to the advanced model
+      const modelToUse = model || this.getModel(ModelType.Advanced);
+      
+      if (this.debugMode) {
+        console.log(`Generating multimodal response with model: ${modelToUse}`);
+        console.log(`System prompt: ${systemPrompt.substring(0, 100)}...`);
+        console.log(`Content items: ${content.length}`);
+      }
+      
+      // Make the API call
+      const response = await this.anthropic.messages.create({
+        model: modelToUse,
+        max_tokens: 4000,
+        temperature: 0.2, // Lower temperature for more precise analysis
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: content
+          }
+        ]
+      });
+      
+      if (this.debugMode) {
+        console.log('Multimodal response received');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error generating multimodal response:', error);
+      throw this.handleApiError(error);
+    }
+  }
+  
+  /**
    * Extracts JSON content from markdown formatted text
    * @param text The markdown text that may contain a JSON code block or raw JSON
    * @returns The extracted JSON content or the original text if no JSON is found

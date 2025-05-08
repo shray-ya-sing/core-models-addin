@@ -32,8 +32,22 @@ export class ClientExcelOperationGenerator {
     chatHistory: Array<{ role: string; content: string }>
   ): Promise<ExcelCommandPlan> {
     try {
+      // Parse the workbook context to extract formatting protocol if available
+      let formattingProtocol = null;
+      try {
+        const parsedContext = JSON.parse(workbookContext);
+        if (parsedContext.formattingProtocol) {
+          formattingProtocol = parsedContext.formattingProtocol;
+          if (this.debugMode) {
+            console.log('Found formatting protocol in workbook context');
+          }
+        }
+      } catch (parseError) {
+        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
+      }
+      
       // Create a system prompt for generating Excel operations
-      const systemPrompt = this.buildSystemPrompt();
+      const systemPrompt = this.buildSystemPrompt(formattingProtocol);
       
       // Use the standard model for generating operations
       const modelToUse = this.anthropic.getModel(ModelType.Standard);
@@ -134,12 +148,104 @@ export class ClientExcelOperationGenerator {
   
   /**
    * Build the system prompt for generating Excel operations
+   * @param formattingProtocol Optional formatting protocol to include in the prompt
    * @returns The system prompt
    */
-  private buildSystemPrompt(): string {
-    return `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
+  private buildSystemPrompt(formattingProtocol: any = null): string {
+    let basePrompt = `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
 
-CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.
+CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.`;
+    
+    // Add formatting protocol instructions if available
+    if (formattingProtocol) {
+      basePrompt += `
+
+IMPORTANT: When generating operations that involve formatting or styling, follow the user's existing formatting conventions as described below. This ensures consistency with the user's workbook design.
+
+FORMATTING PROTOCOL:
+`;
+      
+      // Add color coding instructions
+      if (formattingProtocol.colorCoding) {
+        basePrompt += `
+COLOR CODING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.colorCoding.inputs) {
+          basePrompt += `- Input cells: ${formattingProtocol.colorCoding.inputs}
+`;
+        }
+        if (formattingProtocol.colorCoding.calculations) {
+          basePrompt += `- Calculation cells: ${formattingProtocol.colorCoding.calculations}
+`;
+        }
+        if (formattingProtocol.colorCoding.hardcodedValues) {
+          basePrompt += `- Hardcoded values: ${formattingProtocol.colorCoding.hardcodedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.linkedValues) {
+          basePrompt += `- Linked values: ${formattingProtocol.colorCoding.linkedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.headers) {
+          basePrompt += `- Headers: ${formattingProtocol.colorCoding.headers}
+`;
+        }
+        if (formattingProtocol.colorCoding.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.colorCoding.totals}
+`;
+        }
+      }
+      
+      // Add number formatting instructions
+      if (formattingProtocol.numberFormatting) {
+        basePrompt += `
+NUMBER FORMATTING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.numberFormatting.currency) {
+          basePrompt += `- Currency: ${formattingProtocol.numberFormatting.currency}
+`;
+        }
+        if (formattingProtocol.numberFormatting.percentage) {
+          basePrompt += `- Percentage: ${formattingProtocol.numberFormatting.percentage}
+`;
+        }
+        if (formattingProtocol.numberFormatting.date) {
+          basePrompt += `- Date: ${formattingProtocol.numberFormatting.date}
+`;
+        }
+        if (formattingProtocol.numberFormatting.general) {
+          basePrompt += `- General: ${formattingProtocol.numberFormatting.general}
+`;
+        }
+      }
+      
+      // Add border styling instructions
+      if (formattingProtocol.borderStyles) {
+        basePrompt += `
+BORDER STYLING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.borderStyles.tables) {
+          basePrompt += `- Tables: ${formattingProtocol.borderStyles.tables}
+`;
+        }
+        if (formattingProtocol.borderStyles.sections) {
+          basePrompt += `- Sections: ${formattingProtocol.borderStyles.sections}
+`;
+        }
+        if (formattingProtocol.borderStyles.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.borderStyles.totals}
+`;
+        }
+      }
+      
+      basePrompt += `
+When creating new elements in the workbook, ensure they follow these formatting conventions for consistency.`;
+    }
+    
+    basePrompt += `
 
 OUTPUT FORMAT:
 You must respond with a JSON object that follows this schema:
@@ -151,7 +257,9 @@ You must respond with a JSON object that follows this schema:
       ...                 // Additional fields specific to the operation type
     }
   ]
-}
+}`;
+    
+    return basePrompt + `
 
 ALLOWED OPERATION TYPES:
 - set_value: Set a value in a cell

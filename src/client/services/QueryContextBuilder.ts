@@ -2,6 +2,7 @@ import { MetadataChunk, QueryContext, QueryType } from '../models/CommandModels'
 import { ClientWorkbookStateManager } from './ClientWorkbookStateManager';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';
 import { ChunkLocatorService } from './ChunkLocatorService';
+import { multimodalAnalysisService } from './document-understanding/MultimodalAnalysisService';
 
 /**
  * Builds query contexts by selecting and assembling relevant chunks
@@ -294,18 +295,69 @@ export class QueryContextBuilder {
       };
     
     // Create the compressed workbook in the format expected by the LLM
-    const compressedWorkbook = {
+    const compressedWorkbook: any = {
       sheets,
       activeSheet: context.activeSheet || (sheets[0] ? sheets[0].name : ''),
       metrics
     };
+    
+    // Get the workbook-specific formatting protocol from the multimodal analysis service
+    try {
+      // Get the workbook ID from the active workbook
+      const workbookId = this.workbookStateManager.getWorkbookId();
+      
+      if (workbookId) {
+        // Get the formatting data for this specific workbook
+        const formattingData = multimodalAnalysisService.getWorkbookFormattingData(workbookId);
+        
+        if (formattingData) {
+          console.log(`Including workbook-specific formatting protocol for workbook: ${workbookId}`);
+          compressedWorkbook.formattingProtocol = formattingData.formattingProtocol;
+          
+          // Also include the formatting metadata which contains additional context
+          compressedWorkbook.formattingMetadata = formattingData.formattingMetadata;
+        } else {
+          // Fall back to the legacy cache if no workbook-specific protocol is available
+          const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
+          if (formattingProtocol) {
+            console.log('Including legacy formatting protocol in context');
+            compressedWorkbook.formattingProtocol = formattingProtocol;
+          } else {
+            console.log('No formatting protocol available for inclusion in context');
+          }
+        }
+      } else {
+        console.log('No workbook ID available, cannot retrieve workbook-specific formatting protocol');
+        
+        // Fall back to the legacy cache
+        const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
+        if (formattingProtocol) {
+          console.log('Including legacy formatting protocol in context');
+          compressedWorkbook.formattingProtocol = formattingProtocol;
+        }
+      }
+    } catch (error) {
+      console.warn('Error getting formatting protocol for context:', error);
+      
+      // In case of error, try to fall back to the legacy cache
+      try {
+        const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
+        if (formattingProtocol) {
+          console.log('Including legacy formatting protocol after error');
+          compressedWorkbook.formattingProtocol = formattingProtocol;
+        }
+      } catch (fallbackError) {
+        console.error('Error getting legacy formatting protocol:', fallbackError);
+      }
+    }
     
     // Add diagnostics to help debug issues
     if (process.env.NODE_ENV !== 'production') {
       compressedWorkbook['_diagnostic'] = {
         chunkCount: context.chunks.length,
         validSheetCount: sheetPayloads.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        hasFormattingProtocol: !!compressedWorkbook.formattingProtocol
       };
     }
     

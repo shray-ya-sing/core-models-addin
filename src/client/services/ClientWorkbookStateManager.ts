@@ -43,6 +43,14 @@ export class ClientWorkbookStateManager {
   }
   
   /**
+   * Get the current workbook ID
+   * @returns The ID of the current workbook, or undefined if not available
+   */
+  public getWorkbookId(): string | undefined {
+    return Office?.context?.document?.settings?.get('workbookId');
+  }
+  
+  /**
    * Set up event listeners to detect workbook changes
    */
   public async setupChangeListeners(): Promise<void> {
