@@ -1,15 +1,20 @@
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import VersionHistoryView from './VersionHistoryView';
 import { ClientCommandManager } from '../services/ClientCommandManager';
 import { ClientCommandExecutor } from '../services/ClientCommandExecutor';
 import { ClientWorkbookStateManager } from '../services/ClientWorkbookStateManager';
 import { ClientSpreadsheetCompressor } from '../services/ClientSpreadsheetCompressor';
+import { ClientExcelCommandAdapter } from '../services/ClientExcelCommandAdapter';
+import { ClientExcelCommandInterpreter } from '../services/ClientExcelCommandInterpreter';
 import { ClientAnthropicService } from '../services/ClientAnthropicService';
 import { ClientKnowledgeBaseService } from '../services/ClientKnowledgeBaseService';
 import { ClientQueryProcessor, QueryProcessorResult } from '../services/ClientQueryProcessor';
+import { VersionHistoryProvider } from '../services/versioning/VersionHistoryProvider';
+import { VersionEventType } from '../models/VersionModels';
 import { Command, CommandStatus } from '../models/CommandModels';
 import { ProcessStatusManager, ProcessStatus, ProcessStage } from '../models/ProcessStatusModels';
 import { TypewriterEffect } from './TypewriterEffect';
@@ -17,7 +22,11 @@ import StatusIndicator, { StatusType } from './StatusIndicator';
 import ProcessStatusTracker from './ProcessStatusTracker';
 import { getStageName } from './ProcessStatusTracker';
 import config from '../config';
+import { AIApprovalSystem } from '../services/AIApprovalSystem';
+import { PendingChangesTracker, PendingChange } from '../services/PendingChangesTracker';
+import { ShapeEventHandler } from '../services/ShapeEventHandler';
 import { SendIcon, FileIcon, CheckIcon, AlertCircleIcon } from './icons';
+import PendingChangesBar from './PendingChangesBar';
 
 // Message type definition
 interface ChatMessage {
@@ -28,7 +37,32 @@ interface ChatMessage {
   stage?: string;
 }
 
-const TailwindFinancialModelChat: React.FC = () => {
+// Conversation session interface
+interface ConversationSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  lastUpdated: number; // timestamp
+  createdAt: number; // timestamp
+  workbookId?: string; // Identifier for the associated workbook
+}
+
+interface TailwindFinancialModelChatProps {
+  newConversationTrigger?: number;
+  showPastConversationsTrigger?: number;
+  showVersionHistoryTrigger?: number;
+}
+
+const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({ 
+  newConversationTrigger = 0,
+  showPastConversationsTrigger = 0,
+  showVersionHistoryTrigger = 0
+}) => {
+  // Storage key for conversations in localStorage
+  const STORAGE_KEY = 'excel-addin-conversations';
+  
+  // Current conversation and messages state
+  const [currentSession, setCurrentSession] = useState<string>(''); // Current session ID
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +70,35 @@ const TailwindFinancialModelChat: React.FC = () => {
   const [servicesReady, setServicesReady] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  
+  // All saved conversations
+  const [sessions, setSessions] = useState<ConversationSession[]>([]);
+  
+  // Current workbook ID
+  const [currentWorkbookId, setCurrentWorkbookId] = useState<string>('');
+  
+  // Filter sessions by current workbook ID
+  const getWorkbookSessions = (allSessions: ConversationSession[]): ConversationSession[] => {
+    // If we don't have a workbook ID yet, return all sessions
+    if (!currentWorkbookId) {
+      return allSessions;
+    }
+    
+    // Filter sessions to only include those for the current workbook
+    // Also include sessions without a workbookId (for backward compatibility)
+    return allSessions.filter(session => 
+      !session.workbookId || session.workbookId === currentWorkbookId
+    );
+  };
+  
+  // State to control showing all conversations
+  const [showAllConversations, setShowAllConversations] = useState(false);
+  
+  // State to control showing the past conversations view
+  const [showPastConversationsView, setShowPastConversationsView] = useState(false);
+  
+  // State to control showing the version history view
+  const [showVersionHistoryView, setShowVersionHistoryView] = useState(false);
   
   // Refs
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -49,15 +112,114 @@ const TailwindFinancialModelChat: React.FC = () => {
   const [anthropicService, setAnthropicService] = useState<ClientAnthropicService | null>(null);
   const [knowledgeBaseService, setKnowledgeBaseService] = useState<ClientKnowledgeBaseService | null>(null);
   const [queryProcessor, setQueryProcessor] = useState<ClientQueryProcessor | null>(null);
+  const [commandInterpreter, setCommandInterpreter] = useState<ClientExcelCommandInterpreter | null>(null);
+  const versionHistoryProviderRef = useRef<VersionHistoryProvider>(new VersionHistoryProvider());
+  const [pendingChangesTracker, setPendingChangesTracker] = useState<PendingChangesTracker | null>(null);
+  const [shapeEventHandler, setShapeEventHandler] = useState<ShapeEventHandler | null>(null);
+  const [approvalEnabled, setApprovalEnabled] = useState<boolean>(false);
 
   // Status trackers
   const [statusManager] = useState<ProcessStatusManager>(() => ProcessStatusManager.getInstance());
   const [currentStatus, setCurrentStatus] = useState<ProcessStatus | null>(null);
+  
+  // Pending changes state
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  
+  // Function to refresh pending changes
+  const refreshPendingChanges = useCallback(() => {
+    if (pendingChangesTracker && currentWorkbookId) {
+      const changes = pendingChangesTracker.getPendingChanges(currentWorkbookId);
+      setPendingChanges(changes);
+    }
+  }, [pendingChangesTracker, currentWorkbookId]);
+  
+  // Functions to handle accept/reject actions
+  const handleAcceptAll = useCallback(async () => {
+    if (pendingChangesTracker && pendingChanges.length > 0) {
+      for (const change of pendingChanges) {
+        await pendingChangesTracker.acceptChange(change.id);
+      }
+      refreshPendingChanges();
+    }
+  }, [pendingChangesTracker, pendingChanges, refreshPendingChanges]);
+  
+  const handleRejectAll = useCallback(async () => {
+    if (pendingChangesTracker && pendingChanges.length > 0) {
+      for (const change of pendingChanges) {
+        await pendingChangesTracker.rejectChange(change.id);
+      }
+      refreshPendingChanges();
+    }
+  }, [pendingChangesTracker, pendingChanges, refreshPendingChanges]);
+  
+  const handleAcceptChange = useCallback(async (changeId: string) => {
+    if (pendingChangesTracker) {
+      await pendingChangesTracker.acceptChange(changeId);
+      refreshPendingChanges();
+    }
+  }, [pendingChangesTracker, refreshPendingChanges]);
+  
+  const handleRejectChange = useCallback(async (changeId: string) => {
+    if (pendingChangesTracker) {
+      await pendingChangesTracker.rejectChange(changeId);
+      refreshPendingChanges();
+    }
+  }, [pendingChangesTracker, refreshPendingChanges]);
 
+  // Get current workbook ID
+  const getCurrentWorkbookId = async (): Promise<string> => {
+    try {
+      // Check if Office and Excel are available
+      if (typeof Excel === 'undefined') {
+        console.warn('Excel API not available');
+        return 'unknown-workbook';
+      }
+      
+      return await Excel.run(async (context) => {
+        // Get the workbook properties
+        const workbook = context.workbook;
+        workbook.load('name');
+        
+        await context.sync();
+        
+        // Use the workbook name as the ID, or a fallback if not available
+        const workbookId = workbook.name || `workbook-${new Date().getTime()}`;
+        return workbookId;
+      });
+    } catch (error) {
+      console.error('Error getting workbook ID:', error);
+      return 'unknown-workbook';
+    }
+  };
+  
   // Initialize services
+  // Effect to periodically refresh pending changes
+  useEffect(() => {
+    if (pendingChangesTracker && currentWorkbookId) {
+      // Initial refresh
+      refreshPendingChanges();
+      
+      // Set up interval to refresh pending changes
+      const intervalId = window.setInterval(() => {
+        refreshPendingChanges();
+      }, 2000); // Refresh every 2 seconds
+      
+      return () => {
+        window.clearInterval(intervalId);
+      };
+    }
+    
+    // Return empty cleanup function if conditions aren't met
+    return () => {};
+  }, [pendingChangesTracker, currentWorkbookId, refreshPendingChanges]);
+
   useEffect(() => {
     // Initialize all client services
     const initializeClientServices = async () => {
+      // Get the current workbook ID
+      const workbookId = await getCurrentWorkbookId();
+      setCurrentWorkbookId(workbookId);
+      console.log('Current workbook ID:', workbookId);
       try {
         // Log initialization
         console.log('%c Initializing client services...', 'background: #222; color: #bada55; font-size: 14px');
@@ -66,17 +228,79 @@ const TailwindFinancialModelChat: React.FC = () => {
         if (!config.anthropicApiKey) {
           console.warn('No Anthropic API key found in configuration');
         }
-
-        // Initialize services
+        
+        // Create service instances
+        // Create a single interpreter instance that will be shared by all components
+        const interpreter = new ClientExcelCommandInterpreter();
+        
+        // Initialize version history system first
+        console.log(`🔄 [TailwindFinancialModelChat] Initializing version history system with workbookId: ${workbookId}`);
+        versionHistoryProviderRef.current.initialize(interpreter);
+        versionHistoryProviderRef.current.setCurrentWorkbookId(workbookId);
+        
+        // Verify the version history system is properly initialized
+        console.log(`✅ [TailwindFinancialModelChat] Version history system initialized with interpreter:`, {
+          hasActionRecorder: !!interpreter.getActionRecorder(),
+          workbookId: interpreter.getCurrentWorkbookId() || 'not set'
+        });
+        
+        // Now create the other services
         const stateManager = new ClientWorkbookStateManager();
         const compressor = new ClientSpreadsheetCompressor();
-        const anthropic = new ClientAnthropicService(config.anthropicApiKey);
-        const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
+        const executor = new ClientCommandExecutor(stateManager);
         
-        // Initialize command execution system
-        const commandExecutor = new ClientCommandExecutor(stateManager);
-        // Pass the WorkbookStateManager to the CommandManager for cache invalidation
-        const manager = new ClientCommandManager(commandExecutor, stateManager);
+        // Create the command adapter with our shared interpreter instance
+        const adapter = new ClientExcelCommandAdapter(interpreter);
+        
+        // Create the command manager with our shared adapter instance
+        const manager = new ClientCommandManager(executor, stateManager, adapter);
+        
+        // Log the shared components to verify they're properly connected
+        console.log(`🔄 [TailwindFinancialModelChat] Shared components:`, {
+          interpreter: interpreter,
+          adapter: adapter,
+          manager: manager
+        });
+        const anthropic = new ClientAnthropicService(config.anthropicApiKey, config.openaiApiKey);
+        const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
+        const processor = new ClientQueryProcessor({
+          anthropic,
+          kbService: knowledgeBase,
+          workbookStateManager: stateManager,
+          compressor,
+          commandManager: manager
+        });
+        
+        // Set up event listeners for workbook changes
+        await stateManager.setupChangeListeners();
+        
+        // Initialize AI Approval System
+        console.log(`🔄 [TailwindFinancialModelChat] Initializing AI approval system...`);
+        const versionHistoryService = versionHistoryProviderRef.current.getVersionHistoryService();
+        const { pendingChangesTracker: pct, shapeEventHandler: seh } = AIApprovalSystem.initialize(interpreter, versionHistoryService);
+        
+        // Set the current workbook ID on the shape event handler
+        seh.setCurrentWorkbookId(workbookId);
+        
+        // Start the shape event handler polling
+        seh.startPolling();
+        
+        // Update state with service instances
+        setWorkbookStateManager(stateManager);
+        setSpreadsheetCompressor(compressor);
+        setCommandExecutor(executor);
+        setCommandManager(manager);
+        setAnthropicService(anthropic);
+        setKnowledgeBaseService(knowledgeBase);
+        setQueryProcessor(processor);
+        setCommandInterpreter(interpreter);
+        setPendingChangesTracker(pct);
+        setShapeEventHandler(seh);
+        
+        // Enable approval workflow by default
+        interpreter.setRequireApproval(true);
+        setApprovalEnabled(true);
+        console.log(`✅ [TailwindFinancialModelChat] AI approval system initialized and enabled`);
         
         // Register for command updates
         const unsubscribeCommandUpdate = manager.onCommandUpdate((command) => {
@@ -96,16 +320,6 @@ const TailwindFinancialModelChat: React.FC = () => {
           }
         });
                 
-        // Create query processor
-        const processor = new ClientQueryProcessor({
-          anthropic,
-          kbService: knowledgeBase,
-          workbookStateManager: stateManager,
-          compressor,
-          commandManager: manager,
-          useAdvancedChunkLocation: true
-        });
-
         // Set up process status manager listener
         const processManager = ProcessStatusManager.getInstance();
         const unsubscribeProcessEvents = processManager.addListener((event) => {
@@ -178,27 +392,22 @@ const TailwindFinancialModelChat: React.FC = () => {
             
             return prev;
           });
-          
-          // We're keeping all status messages visible now
-          // No auto-removal for successful status messages
         });
         
-        // Store services in state
-        setWorkbookStateManager(stateManager);
-        setSpreadsheetCompressor(compressor);
-        setAnthropicService(anthropic);
-        setKnowledgeBaseService(knowledgeBase);
-        setCommandManager(manager);
-        setQueryProcessor(processor);
+        // Mark services as ready
         console.log('%c All services initialized successfully!', 'background: #222; color: #2ecc71; font-size: 14px');
         setServicesReady(true);
         
-        // No welcome message in the chat history anymore
-        
         // Return cleanup function
         return () => {
-          unsubscribeCommandUpdate();
-          unsubscribeProcessEvents();
+          if (unsubscribeCommandUpdate) unsubscribeCommandUpdate();
+          if (unsubscribeProcessEvents) unsubscribeProcessEvents();
+          
+          // Stop the shape event handler polling
+          if (seh) {
+            seh.stopPolling();
+            console.log('🛑 [TailwindFinancialModelChat] Stopped shape event handler polling');
+          }
         };
       } catch (error) {
         console.error('Error initializing client services:', error);
@@ -206,7 +415,7 @@ const TailwindFinancialModelChat: React.FC = () => {
           role: 'system', 
           content: `Error initializing services: ${error.message}` 
         }]);
-        return () => {};
+        return () => {}; // Return empty cleanup function for error case
       }
     };
     
@@ -215,10 +424,55 @@ const TailwindFinancialModelChat: React.FC = () => {
     // Cleanup function
     return () => {
       if (cleanup) {
-        cleanup.then(cleanupFn => cleanupFn());
+        cleanup.then(cleanupFn => {
+          if (cleanupFn) cleanupFn();
+          return;
+        }).catch(err => {
+          console.error('Error in cleanup function:', err);
+        });
       }
     };
   }, []);
+
+  // Load saved conversations from localStorage on component mount
+  useEffect(() => {
+    const loadSavedSessions = () => {
+      try {
+        const savedSessions = localStorage.getItem(STORAGE_KEY);
+        if (savedSessions) {
+          const parsedSessions = JSON.parse(savedSessions) as ConversationSession[];
+          // Sort sessions by last updated timestamp (newest first)
+          const sortedSessions = parsedSessions.sort((a, b) => b.lastUpdated - a.lastUpdated);
+          setSessions(sortedSessions);
+        }
+      } catch (error) {
+        console.error('Error loading saved sessions:', error);
+      }
+    };
+    
+    loadSavedSessions();
+  }, []);
+  
+  // Set current session based on workbook ID when it changes
+  useEffect(() => {
+    if (!currentWorkbookId || sessions.length === 0) return;
+    
+    console.log('Setting session based on workbook ID:', currentWorkbookId);
+    
+    // Get workbook-specific sessions
+    const workbookSessions = getWorkbookSessions(sessions);
+    
+    // If there are workbook-specific sessions, set the most recent one as current
+    if (workbookSessions.length > 0) {
+      setCurrentSession(workbookSessions[0].id);
+      setMessages(workbookSessions[0].messages);
+      console.log('Loaded existing session for workbook:', workbookSessions[0].title);
+    } else {
+      // If no workbook-specific sessions, create a new one
+      console.log('No sessions for current workbook, creating new session');
+      createNewSession();
+    }
+  }, [currentWorkbookId, sessions.length]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -226,9 +480,103 @@ const TailwindFinancialModelChat: React.FC = () => {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
+  
+  // Update localStorage when sessions change
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    }
+  }, [sessions]);
+  
+  // Update current session's messages when messages state changes
+  useEffect(() => {
+    if (currentSession && messages.length > 0) {
+      updateSessionMessages(currentSession, messages);
+    }
+  }, [messages]);
+  
+  // Session management functions
+  const createNewSession = () => {
+    const newSessionId = uuidv4();
+    const newSession: ConversationSession = {
+      id: newSessionId,
+      title: 'New Conversation', // Default title
+      messages: [],
+      lastUpdated: Date.now(),
+      createdAt: Date.now(),
+      workbookId: currentWorkbookId // Associate with current workbook
+    };
+    
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSession(newSessionId);
+    setMessages([]);
+    setHasUserSentMessage(false);
+    return newSessionId;
+  };
+  
+  const getSessionTitle = (messages: ChatMessage[]) => {
+    // Find first user message to use as title
+    const firstUserMessage = messages.find(msg => msg.role === 'user');
+    if (firstUserMessage) {
+      // Truncate to reasonable title length (max 30 chars)
+      const truncatedContent = firstUserMessage.content.substring(0, 30);
+      return truncatedContent + (firstUserMessage.content.length > 30 ? '...' : '');
+    }
+    return 'New Conversation';
+  };
+  
+  const updateSessionMessages = (sessionId: string, updatedMessages: ChatMessage[]) => {
+    setSessions(prev => {
+      return prev.map(session => {
+        if (session.id === sessionId) {
+          // Update the title if it's still the default and we have user messages
+          const title = session.title === 'New Conversation' 
+            ? getSessionTitle(updatedMessages)
+            : session.title;
+            
+          return {
+            ...session,
+            messages: updatedMessages,
+            title,
+            lastUpdated: Date.now()
+          };
+        }
+        return session;
+      });
+    });
+  };
+  
+  const loadSession = (sessionId: string) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      setCurrentSession(sessionId);
+      setMessages(session.messages);
+      setHasUserSentMessage(session.messages.length > 0);
+    }
+  };
+  
+  const formatTimeAgo = (timestamp: number) => {
+    const now = Date.now();
+    const secondsAgo = Math.floor((now - timestamp) / 1000);
+    
+    if (secondsAgo < 60) return `${secondsAgo}s`;
+    if (secondsAgo < 3600) return `${Math.floor(secondsAgo / 60)}m`;
+    if (secondsAgo < 86400) return `${Math.floor(secondsAgo / 3600)}h`;
+    return `${Math.floor(secondsAgo / 86400)}d`;
+  };
 
+  // Load the most recent session when first opened (but don't create a new one)
+  useEffect(() => {
+    if (!currentSession && sessions.length > 0) {
+      // If there are existing sessions but none selected, select the most recent one
+      setCurrentSession(sessions[0].id);
+      setMessages(sessions[0].messages);
+      setHasUserSentMessage(sessions[0].messages.length > 0);
+    }
+  }, [sessions]);
+  
   // Handle sending a message
-    const handleSendMessage = async () => {
+  const handleSendMessage = async () => {
       console.log('%c handleSendMessage called', 'background: #222; color: #3498db; font-size: 14px');
       console.log('servicesReady:', servicesReady, 'queryProcessor:', !!queryProcessor);
       
@@ -244,6 +592,12 @@ const TailwindFinancialModelChat: React.FC = () => {
       if (!userInput.trim()) return;
       
       // Add user message to chat
+      // If no current session, create one
+      if (!currentSession) {
+        const newSessionId = createNewSession();
+        setCurrentSession(newSessionId);
+      }
+      
       setMessages(prev => [...prev, { role: 'user', content: userInput }]);
       setUserInput('');
       setIsLoading(true);
@@ -360,8 +714,40 @@ const TailwindFinancialModelChat: React.FC = () => {
         
         // If there's a command in the response, log it but don't show a message
         if (result.command) {
-          console.log(`Executing command: ${result.command.description}`);
-          // Removed system message
+          console.log(`🔄 [TailwindFinancialModelChat] Command received: ${result.command.description}`);
+          
+          // Log the version history state
+          if (commandInterpreter) {
+            console.log(`🔄 [TailwindFinancialModelChat] Version history state:`, {
+              hasActionRecorder: !!commandInterpreter.getActionRecorder(),
+              workbookId: commandInterpreter.getCurrentWorkbookId() || 'not set'
+            });
+          }
+          
+          // Check if command is already being executed
+          if (commandManager) {
+            const command = commandManager.getCommand(result.command.id);
+            if (command) {
+              // Command exists, check its status
+              if (command.status === 'running' || command.status === 'pending') {
+                console.log(`🔔 [TailwindFinancialModelChat] Command ${result.command.id} is already being executed (status: ${command.status}). Skipping duplicate execution.`);
+                // We'll just wait for the status updates via the listener
+              } else if (command.status === 'completed') {
+                console.log(`✅ [TailwindFinancialModelChat] Command ${result.command.id} is already completed. No need to execute again.`);
+              } else if (command.status === 'failed') {
+                console.log(`⚠️ [TailwindFinancialModelChat] Command ${result.command.id} previously failed. Not re-executing.`);
+              } else {
+                // Command exists but is in an unknown state, execute it
+                console.log(`🔄 [TailwindFinancialModelChat] Executing command with ID: ${result.command.id}`);
+                await commandManager.executeCommand(result.command.id);
+                console.log(`✅ [TailwindFinancialModelChat] Command execution completed`);
+              }
+            } else {
+              // Command doesn't exist in the manager yet, which is unusual
+              // This might happen if there's a race condition where the command hasn't been added yet
+              console.log(`❓ [TailwindFinancialModelChat] Command ${result.command.id} not found in command manager. This is unexpected.`);
+            }
+          }
         }
       } catch (error) {
         console.error('%c CRITICAL ERROR in message handling:', 'background: #f00; color: #fff; font-size: 14px', error);
@@ -388,9 +774,121 @@ const TailwindFinancialModelChat: React.FC = () => {
         setUserInput(e.target.value);
       };
 
+  // Watch for new conversation triggers from the header component
+  useEffect(() => {
+    if (newConversationTrigger > 0) {
+      createNewSession();
+    }
+  }, [newConversationTrigger]);
+  
+  // Watch for show past conversations triggers from the header component
+  useEffect(() => {
+    if (showPastConversationsTrigger > 0) {
+      console.log('Show past conversations trigger received:', showPastConversationsTrigger);
+      // Toggle the past conversations view instead of showing all conversations in-place
+      setShowPastConversationsView(true);
+      // Hide version history view if it's open
+      setShowVersionHistoryView(false);
+    }
+  }, [showPastConversationsTrigger]);
+  
+  // Watch for show version history triggers from the header component
+  useEffect(() => {
+    if (showVersionHistoryTrigger > 0) {
+      console.log('Show version history trigger received:', showVersionHistoryTrigger);
+      
+      // Ensure the version history provider has the current workbook ID
+      if (commandInterpreter && currentWorkbookId) {
+        console.log(`🔄 [TailwindFinancialModelChat] Ensuring version history is initialized before showing panel`);
+        versionHistoryProviderRef.current.initialize(commandInterpreter);
+        versionHistoryProviderRef.current.setCurrentWorkbookId(currentWorkbookId);
+      }
+      
+      // Toggle the version history view
+      setShowVersionHistoryView(true);
+      // Hide past conversations view if it's open
+      setShowPastConversationsView(false);
+    }
+  }, [showVersionHistoryTrigger, commandInterpreter, currentWorkbookId]);
+
+  // Function to go back from past conversations view
+  const closePastConversationsView = () => {
+    setShowPastConversationsView(false);
+  };
+  
+  // Function to go back from version history view
+  const closeVersionHistoryView = () => {
+    setShowVersionHistoryView(false);
+  };
+
   return (
-    <div className="flex flex-col h-full font-mono text-sm">
-      {!hasUserSentMessage ? (
+    <div className="flex flex-col h-full font-mono text-sm relative">
+      {showVersionHistoryView ? (
+        // Version History View - using the separate component
+        <VersionHistoryView 
+          onClose={closeVersionHistoryView} 
+          workbookId={currentWorkbookId}
+          versionHistoryProvider={versionHistoryProviderRef.current}
+        />
+      ) : showPastConversationsView ? (
+        // Past Conversations View - full page transition
+        <div className="flex flex-col h-full p-4 animate-fadeIn transition-all duration-300">
+          {/* Header with back button */}
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center">
+              <button 
+                onClick={closePastConversationsView}
+                className="text-gray-400 hover:text-white p-1 mr-2 rounded transition-colors"
+                aria-label="Back"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+              </button>
+              <h2 className="font-medium text-white" style={{ 
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                fontSize: '12px'
+              }}>Past Conversations</h2>
+            </div>
+          </div>
+          
+          {/* Scrollable Container for Past Conversations */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex flex-col space-y-0.5">
+              {sessions.length === 0 ? (
+                <div className="text-gray-500 text-center py-2" style={{ 
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  fontSize: '11px' 
+                }}>
+                  No conversations yet
+                </div>
+              ) : (
+                getWorkbookSessions(sessions).map(session => (
+                  <div 
+                    key={session.id} 
+                    className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
+                    onClick={() => {
+                      loadSession(session.id);
+                      closePastConversationsView();
+                    }}
+                  >
+                    <div className="flex-grow text-white/80" style={{ 
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                      fontSize: '12px' 
+                    }}>{session.title}</div>
+                    <div className="ml-2" style={{ 
+                      fontSize: '10px', 
+                      opacity: 0.4, 
+                      color: 'white', 
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                    }}>{formatTimeAgo(session.lastUpdated)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : !hasUserSentMessage ? (
         // Welcome screen with Tailwind CSS styling (similar to cascade-chat)
         <div className="flex flex-col h-full p-4">
           {/* Flex container that takes up all available space but allows Past Conversations to be at bottom */}
@@ -455,49 +953,55 @@ const TailwindFinancialModelChat: React.FC = () => {
           </div>
           
           {/* Past conversations - positioned at bottom with fixed sizes */}
-          <div className="w-full max-w-xl self-center">
-            <h2 className="font-medium text-white mb-3" style={{ 
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-              fontSize: '12px'
-            }}>Past Conversations</h2>
+          <div className="w-full max-w-xl self-center past-conversations-section">
+            <div className="mb-3">
+              <h2 className="font-medium text-white" style={{ 
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                fontSize: '12px'
+              }}>Past Conversations</h2>
+            </div>
             <div className="flex flex-col space-y-0.5">
-              {/* Sample conversations */}
-              <div className="flex justify-between items-center py-2 px-3 hover:bg-black/20 rounded-lg cursor-pointer">
-                <div className="flex-grow text-white/80" style={{ 
+              {sessions.length === 0 ? (
+                <div className="text-gray-500 text-center py-2" style={{ 
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  fontSize: '12px' 
-                }}>Q1 Earnings Forecast Model</div>
-                <div className="ml-2" style={{ 
-                  fontSize: '10px', 
-                  opacity: 0.4, 
-                  color: 'white', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
-                }}>38s</div>
-              </div>
-              <div className="flex justify-between items-center py-2 px-3 hover:bg-black/20 rounded-lg cursor-pointer">
-                <div className="flex-grow text-white/80" style={{ 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  fontSize: '12px' 
-                }}>SaaS Company Valuation</div>
-                <div className="ml-2" style={{ 
-                  fontSize: '10px', 
-                  opacity: 0.4, 
-                  color: 'white', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
-                }}>40m</div>
-              </div>
-              <div className="flex justify-between items-center py-2 px-3 hover:bg-black/20 rounded-lg cursor-pointer">
-                <div className="flex-grow text-white/80" style={{ 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  fontSize: '12px' 
-                }}>Merger Synergy Analysis</div>
-                <div className="ml-2" style={{ 
-                  fontSize: '10px', 
-                  opacity: 0.4, 
-                  color: 'white', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
-                }}>1h</div>
-              </div>
+                  fontSize: '11px' 
+                }}>
+                  No conversations yet
+                </div>
+              ) : (
+                // Always show only the first 3 conversations for the current workbook in the main view
+                getWorkbookSessions(sessions).slice(0, 3).map(session => (
+                  <div 
+                    key={session.id} 
+                    className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
+                    onClick={() => loadSession(session.id)}
+                  >
+                    <div className="flex-grow text-white/80" style={{ 
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                      fontSize: '12px' 
+                    }}>{session.title}</div>
+                    <div className="ml-2" style={{ 
+                      fontSize: '10px', 
+                      opacity: 0.4, 
+                      color: 'white', 
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                    }}>{formatTimeAgo(session.lastUpdated)}</div>
+                  </div>
+                ))
+              )}
+              
+              {/* Show more button - always visible when there are more than 3 conversations for the current workbook */}
+              {getWorkbookSessions(sessions).length > 3 && (
+                <button
+                  onClick={() => setShowPastConversationsView(true)}
+                  className="text-gray-400 hover:text-gray-300 text-xs py-2 px-3 rounded-md hover:bg-black/20 w-full text-center transition-colors"
+                  style={{ 
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                  }}
+                >
+                  Show more ({getWorkbookSessions(sessions).length - 3} more)
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -578,10 +1082,15 @@ const TailwindFinancialModelChat: React.FC = () => {
                       }}>
                         Me
                       </div>
-                      <div className="text-white/90" style={{ 
-                        fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
-                      }}>
+                      <div 
+                        className="text-white/90 rounded px-2 py-1" 
+                        style={{ 
+                          fontSize: 'clamp(11px, 1.5vw, 13px)', 
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                          backgroundColor: 'rgba(75, 85, 99, 0.3)', // Light grey background (tailwind gray-600 with opacity)
+                          width: '100%'
+                        }}
+                      >
                         {message.content}
                       </div>
                     </div>
@@ -630,6 +1139,46 @@ const TailwindFinancialModelChat: React.FC = () => {
             )}
           </div>
           
+          {/* Extremely compact approval mode indicator */}
+          <div className="flex items-center justify-end px-2 py-0.5 border-b border-gray-800">
+            <div 
+              className="flex items-center cursor-pointer"
+              onClick={() => {
+                const newState = !approvalEnabled;
+                if (commandInterpreter) {
+                  commandInterpreter.setRequireApproval(newState);
+                }
+                setApprovalEnabled(newState);
+              }}
+            >
+              <div 
+                className="h-2 w-2 rounded-full mr-1"
+                style={{ backgroundColor: approvalEnabled ? '#3b82f6' : '#6b7280' }}
+              />
+              <span 
+                style={{ 
+                  fontSize: '8px', 
+                  color: approvalEnabled ? '#d1d5db' : '#9ca3af',
+                  fontFamily: 'monospace',
+                  letterSpacing: '-0.5px'
+                }}
+              >
+                {approvalEnabled ? 'Approval Mode' : 'Auto Mode'}
+              </span>
+            </div>
+          </div>
+          
+          {/* Pending Changes Bar */}
+          {approvalEnabled && pendingChanges.length > 0 && (
+            <PendingChangesBar
+              pendingChanges={pendingChanges}
+              onAcceptAll={handleAcceptAll}
+              onRejectAll={handleRejectAll}
+              onAcceptChange={handleAcceptChange}
+              onRejectChange={handleRejectChange}
+            />
+          )}
+          
           {/* Input area */}
           <div className="bg-transparent p-2 mx-3 mb-3 rounded-lg">
             <div className="relative flex items-center border border-gray-700 hover:border-gray-500 focus-within:border-blue-500 rounded-md overflow-hidden">
@@ -648,18 +1197,30 @@ const TailwindFinancialModelChat: React.FC = () => {
                 }}
               />
               <button
-                className="absolute right-3 p-1 text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30 rounded-md transition-colors flex items-center justify-center"
+                className={`absolute right-3 p-1 rounded-md transition-all duration-300 flex items-center justify-center ${isLoading ? 'bg-red-600 animate-pulse' : 'text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30'}`}
                 onClick={handleSendMessage}
                 disabled={!userInput.trim() || isLoading || !servicesReady}
-                aria-label="Send message"
+                aria-label={isLoading ? "Processing" : "Send message"}
                 type="button"
+                style={{ 
+                  width: '24px', 
+                  height: '24px',
+                  transition: 'all 0.3s ease'
+                }}
               >
-                <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                {isLoading ? (
+                  // Pulsing red square when loading
+                  <div className="w-3 h-3 bg-white rounded-sm"></div>
+                ) : (
+                  // Arrow icon when not loading
+                  <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
               </button>
             </div>
           </div>
+          {/* Removed the New Conversation button */}
         </>
       )}
     </div>
