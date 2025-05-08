@@ -20,8 +20,12 @@ import {
 
 /**
  * Service for managing version history of Excel workbooks
+ * Implemented as a singleton to ensure only one instance exists throughout the application
  */
 export class VersionHistoryService {
+  // Singleton instance
+  private static instance: VersionHistoryService;
+  
   private actions: Map<string, WorkbookAction> = new Map();
   private versions: Map<string, WorkbookVersion> = new Map();
   private workbookVersions: Map<string, string[]> = new Map(); // workbookId -> versionIds
@@ -32,9 +36,35 @@ export class VersionHistoryService {
   private versionsKey = 'versions';
   private workbookVersionsKey = 'workbook-versions';
   private workbookActionsKey = 'workbook-actions';
+  private initialized = false;
   
-  constructor() {
-    this.loadFromStorage();
+  /**
+   * Private constructor to prevent direct instantiation
+   */
+  private constructor() {
+    // Initialization will be done in initialize() method
+  }
+  
+  /**
+   * Get the singleton instance of VersionHistoryService
+   * @returns The singleton instance
+   */
+  public static getInstance(): VersionHistoryService {
+    if (!VersionHistoryService.instance) {
+      VersionHistoryService.instance = new VersionHistoryService();
+    }
+    return VersionHistoryService.instance;
+  }
+  
+  /**
+   * Initialize the service by loading data from storage
+   * This is separated from the constructor to allow controlled initialization
+   */
+  public initialize(): void {
+    if (!this.initialized) {
+      this.loadFromStorage();
+      this.initialized = true;
+    }
   }
   
   /**

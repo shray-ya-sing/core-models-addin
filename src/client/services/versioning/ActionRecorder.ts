@@ -21,8 +21,18 @@ export class ActionRecorder {
   private recordedOperationFingerprints: Set<string> = new Set();
   private readonly OPERATION_TRACKING_WINDOW_MS = 5000; // 5 seconds window to prevent duplicates
   
-  constructor(versionHistoryService: VersionHistoryService) {
-    this.versionHistoryService = versionHistoryService;
+  /**
+   * Constructor that accepts a VersionHistoryService instance
+   * @param versionHistoryService The version history service to use
+   */
+  constructor(versionHistoryService?: VersionHistoryService) {
+    // Use the provided instance or get the singleton instance
+    this.versionHistoryService = versionHistoryService || VersionHistoryService.getInstance();
+    
+    // Ensure the service is initialized
+    if (!versionHistoryService) {
+      this.versionHistoryService.initialize();
+    }
   }
   
   /**

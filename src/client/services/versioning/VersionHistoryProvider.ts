@@ -18,6 +18,7 @@ import { VersionHistoryService } from './VersionHistoryService';
 import { ActionRecorder } from './ActionRecorder';
 import { VersionRestorer } from './VersionRestorer';
 import { ClientExcelCommandInterpreter } from '../ClientExcelCommandInterpreter';
+import { multimodalAnalysisService } from '../document-understanding/MultimodalAnalysisService';
 
 /**
  * Provider for version history services
@@ -29,9 +30,15 @@ export class VersionHistoryProvider {
   private commandInterpreter: ClientExcelCommandInterpreter | null = null;
   private currentWorkbookId: string = '';
   
+  // Tracking for formatting changes
+  private lastCheckedActionTimestamp: number = 0;
+  private formatChangeCheckInterval: number | null = null;
+  private lastFormattingActionIds: Set<string> = new Set();
+  
   constructor() {
-    // Initialize the version history components
-    this.versionHistoryService = new VersionHistoryService();
+    // Initialize the version history components using the singleton instance
+    this.versionHistoryService = VersionHistoryService.getInstance();
+    this.versionHistoryService.initialize(); // Explicitly initialize the service
     this.actionRecorder = new ActionRecorder(this.versionHistoryService);
     this.versionRestorer = new VersionRestorer(this.versionHistoryService);
   }
@@ -46,7 +53,203 @@ export class VersionHistoryProvider {
     // Set the action recorder in the command interpreter
     commandInterpreter.setActionRecorder(this.actionRecorder);
     
-    console.log('Version history system initialized');
+    // Set up Office.js event handlers to detect sheet changes
+    this.setupOfficeEventHandlers();
+    
+    console.log('Version history system initialized with Office.js change detection');
+  }
+  
+  /**
+   * Sets up Office.js event handlers to detect workbook changes
+   */
+  private setupOfficeEventHandlers(): void {
+    // Ensure Office is initialized
+    if (!Office || !Office.context || !Office.context.document) {
+      console.warn('Office.js not initialized, cannot set up event handlers');
+      return;
+    }
+    
+    try {
+      // Listen for selection changes as an indicator of user activity
+      Office.context.document.addHandlerAsync(
+        Office.EventType.DocumentSelectionChanged,
+        this.handleSelectionChange.bind(this)
+      );
+      
+      // When Excel is ready, set up additional event handlers
+      Excel.run(async (context) => {
+        // Get the active worksheet and workbook
+        const worksheet = context.workbook.worksheets.getActiveWorksheet();
+        worksheet.load('name');
+        
+        // Set up event handlers for worksheet activation
+        context.workbook.worksheets.onActivated.add(this.handleWorksheetActivation.bind(this));
+        
+        // Set up event handlers for data changed events
+        context.workbook.worksheets.onChanged.add(this.handleWorksheetDataChanged.bind(this));
+        
+        // Set up event handlers for formatting changes
+        // Note: There's no direct event for formatting changes, so we'll use the selection changed
+        // event as a proxy and check if formatting has changed when the selection changes
+        
+        await context.sync();
+        console.log(`Set up Office.js event handlers for worksheet: ${worksheet.name}`);
+      }).catch(error => {
+        console.error('Error setting up Office.js event handlers:', error);
+      });
+    } catch (error) {
+      console.error('Error setting up Office.js event handlers:', error);
+    }
+  }
+  
+  /**
+   * Handles selection change events in the document
+   * @param _eventArgs The event arguments (unused but required by the event handler signature)
+   */
+  private handleSelectionChange(_eventArgs: Office.DocumentSelectionChangedEventArgs): void {
+    // Use selection changes as a potential indicator of formatting changes
+    // We'll periodically check if we need to refresh images after multiple selection changes
+    
+    // Throttle the checks to avoid excessive processing
+    if (this.formatChangeCheckInterval) {
+      clearTimeout(this.formatChangeCheckInterval);
+    }
+    
+    // Set a timeout to check for formatting changes after a brief delay
+    this.formatChangeCheckInterval = window.setTimeout(() => {
+      this.checkForFormattingChanges();
+    }, 2000); // 2 second delay
+  }
+  
+  /**
+   * Handles worksheet activation events
+   * @param event The worksheet activation event
+   */
+  private async handleWorksheetActivation(event: Excel.WorksheetActivatedEventArgs): Promise<void> {
+    try {
+      await Excel.run(async (context) => {
+        const worksheet = context.workbook.worksheets.getItem(event.worksheetId);
+        worksheet.load('name');
+        await context.sync();
+        
+        console.log(`Worksheet activated: ${worksheet.name}`);
+        
+        // When a worksheet is activated, check if we need to refresh its images
+        if (this.currentWorkbookId) {
+          // Refresh the images for this sheet if it's not already in progress
+          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
+        }
+      });
+    } catch (error) {
+      console.error('Error handling worksheet activation:', error);
+    }
+  }
+  
+  /**
+   * Handles worksheet data changed events
+   * @param event The worksheet changed event
+   */
+  private async handleWorksheetDataChanged(event: Excel.WorksheetChangedEventArgs): Promise<void> {
+    try {
+      await Excel.run(async (context) => {
+        const worksheet = context.workbook.worksheets.getItem(event.worksheetId);
+        worksheet.load('name');
+        await context.sync();
+        
+        console.log(`Data changed in worksheet: ${worksheet.name}`);
+        
+        // When data changes in a worksheet, check if we need to refresh its images
+        if (this.currentWorkbookId) {
+          // Refresh the images for this sheet
+          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
+        }
+      });
+    } catch (error) {
+      console.error('Error handling worksheet data change:', error);
+    }
+  }
+  
+  /**
+   * Checks for formatting changes in the active worksheet
+   */
+  private async checkForFormattingChanges(): Promise<void> {
+    try {
+      await Excel.run(async (context) => {
+        const worksheet = context.workbook.worksheets.getActiveWorksheet();
+        worksheet.load('name');
+        await context.sync();
+        
+        // If we have a current workbook ID, refresh the images for this sheet
+        if (this.currentWorkbookId) {
+          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
+        }
+      });
+    } catch (error) {
+      console.error('Error checking for formatting changes:', error);
+    }
+  }
+  
+  /**
+   * Determines if an action is related to formatting changes
+   * @param action The workbook action to check
+   * @returns True if the action is related to formatting
+   */
+  private isFormattingRelatedAction(action: WorkbookAction): boolean {
+    // Check if the action type is related to formatting
+    if (action.type === VersionEventType.FormatOperation) {
+      return true;
+    }
+    
+    // Check if the operation contains formatting-related properties
+    const formattingOperations = [
+      'format_range',
+      'conditional_format',
+      'merge_cells',
+      'unmerge_cells',
+      'set_font',
+      'set_fill',
+      'set_border',
+      'set_number_format',
+      'set_alignment',
+      'create_table',
+      'format_table',
+      'format_chart'
+    ];
+    
+    // Check if the operation type is in the list of formatting operations
+    if (action.operation && action.operation.op && formattingOperations.includes(action.operation.op)) {
+      return true;
+    }
+    
+    // Check if the beforeState contains formatting information
+    if (action.beforeState && action.beforeState.formats) {
+      return true;
+    }
+    
+    // Check if the operation metadata contains formatting-related properties
+    if (action.metadata) {
+      const formattingProperties = [
+        'format',
+        'style',
+        'fill',
+        'font',
+        'border',
+        'numberFormat',
+        'alignment',
+        'color',
+        'background',
+        'bold',
+        'italic',
+        'underline'
+      ];
+      
+      // Check if any formatting properties are present in the metadata
+      return formattingProperties.some(prop => 
+        action.metadata && typeof action.metadata === 'object' && prop in action.metadata
+      );
+    }
+    
+    return false;
   }
   
   /**
@@ -54,6 +257,7 @@ export class VersionHistoryProvider {
    * @param workbookId The ID of the current workbook
    */
   public setCurrentWorkbookId(workbookId: string): void {
+    console.log(`Setting current workbook ID in VersionHistoryProvider: ${workbookId}`);
     this.currentWorkbookId = workbookId;
     
     // Also set it in the command interpreter if available
@@ -61,7 +265,9 @@ export class VersionHistoryProvider {
       this.commandInterpreter.setCurrentWorkbookId(workbookId);
     }
     
-    console.log(`Current workbook ID set to: ${workbookId}`);
+    // When the workbook ID changes, set up the Office.js event handlers again
+    // to ensure they're tracking the correct workbook
+    this.setupOfficeEventHandlers();
   }
   
   /**
@@ -170,7 +376,6 @@ export class VersionHistoryProvider {
     
     const actions = this.versionHistoryService.getActionsForWorkbook(this.currentWorkbookId);
     console.log(`💾 [VersionHistoryProvider] Retrieved ${actions.length} actions for workbook: ${this.currentWorkbookId}`);
-    
     return actions;
   }
   
@@ -182,18 +387,7 @@ export class VersionHistoryProvider {
     return this.versionHistoryService;
   }
   
-  /**
-   * Search for versions matching a query
-   * @param query The search query
-   * @returns Array of matching versions
-   */
-  public searchVersions(query: string): WorkbookVersion[] {
-    if (!this.currentWorkbookId) {
-      return [];
-    }
-    
-    return this.versionHistoryService.searchVersions(this.currentWorkbookId, query);
-  }
+
   
   /**
    * Restore a workbook to a previous version

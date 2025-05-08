@@ -19,8 +19,19 @@ export class VersionRestorer {
   private versionHistoryService: VersionHistoryService;
   private undoHandlers: UndoHandlers;
   
-  constructor(versionHistoryService: VersionHistoryService) {
-    this.versionHistoryService = versionHistoryService;
+  /**
+   * Constructor that accepts a VersionHistoryService instance
+   * @param versionHistoryService The version history service to use
+   */
+  constructor(versionHistoryService?: VersionHistoryService) {
+    // Use the provided instance or get the singleton instance
+    this.versionHistoryService = versionHistoryService || VersionHistoryService.getInstance();
+    
+    // Ensure the service is initialized
+    if (!versionHistoryService) {
+      this.versionHistoryService.initialize();
+    }
+    
     this.undoHandlers = new UndoHandlers();
   }
   
