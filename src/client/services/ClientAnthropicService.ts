@@ -108,11 +108,7 @@ export class ClientAnthropicService {
       // Create messages array with multimodal content
       const messages = [];
       
-      // Add system message
-      messages.push({
-        role: 'system',
-        content: systemPrompt
-      });
+      // System prompt will be passed as a separate parameter, not as a message
       
       // Add user message with attachments if any
       if (attachments && attachments.length > 0) {
@@ -175,6 +171,7 @@ export class ClientAnthropicService {
         const stream = await this.anthropic.messages.create({
           model: modelToUse,
           messages: messages as any, // Type assertion to resolve SDK type issue
+          system: systemPrompt, // Add system prompt as a top-level parameter
           max_tokens: 1000,  // Shorter for chat responses
           temperature: 0.7,
           stream: true,
@@ -200,6 +197,7 @@ export class ClientAnthropicService {
         const response = await this.anthropic.messages.create({
           model: modelToUse,
           messages: messages as any, // Type assertion to resolve SDK type issue
+          system: systemPrompt, // Add system prompt as a top-level parameter
           max_tokens: 1000,
           temperature: 0.7,
         });
