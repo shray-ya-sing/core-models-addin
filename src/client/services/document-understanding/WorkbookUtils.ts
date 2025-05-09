@@ -62,8 +62,14 @@ export async function createFormulaFreeWorkbookCopy(): Promise<string> {
       // Convert workbook to buffer
       const buffer = await wb.xlsx.writeBuffer();
       
+      // Log some information about the buffer for debugging
+      console.log(`Created workbook buffer with size: ${buffer.byteLength} bytes`);
+      
       // Convert buffer to base64
-      return arrayBufferToBase64(buffer);
+      const base64 = arrayBufferToBase64(buffer);
+      console.log(`Converted to base64 string with length: ${base64.length} characters`);
+      
+      return base64;
     } catch (error) {
       console.error('Error creating formula-free workbook copy:', error);
       throw error;

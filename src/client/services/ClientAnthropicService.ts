@@ -4,6 +4,16 @@ import OpenAI from 'openai';
 import { CommandStatus } from '../models/CommandModels';
 import { ChatHistoryMessage } from './ClientQueryProcessor';
 
+/**
+ * Attachment type for multimodal messages
+ */
+export interface Attachment {
+  type: 'image' | 'pdf';
+  name: string;
+  content: string; // base64 encoded content
+  mimeType: string;
+}
+
 // First, define interfaces for the classification result
 interface QueryStep {
   step_index: number;
@@ -82,21 +92,69 @@ export class ClientAnthropicService {
   /**
    * Simple chat completion for basic queries like greetings
    * @param prompt The user's prompt
+   * @param attachments Optional attachments (images/pdfs)
    * @param streamHandler Optional handler for streaming responses
    * @returns The generated response
    */
   public async generateChatResponse(
     prompt: string,
+    attachments?: Attachment[],
     streamHandler?: (chunk: string) => void
   ): Promise<any> {
     try {
       // Create a basic system prompt for simple chat interactions
       const systemPrompt = `Your name is Cori. You are a financial modeling assistant for Excel. You help users understand and modify their financial models.`;
       
-      const messages = [{
-        role: 'user' as const,
-        content: `System: ${systemPrompt}\n\nUser: ${prompt}`
-      }];
+      // Create messages array with multimodal content
+      const messages = [];
+      
+      // Add system message
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
+      
+      // Add user message with attachments if any
+      if (attachments && attachments.length > 0) {
+        const content = [];
+        
+        // Add text content
+        content.push({
+          type: 'text' as const,
+          text: prompt
+        });
+        
+        // Add image attachments
+        for (const attachment of attachments) {
+          if (attachment.type === 'image') {
+            content.push({
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          } else if (attachment.type === 'pdf') {
+            // For PDFs, add a note
+            content.push({
+              type: 'text' as const,
+              text: `[Attached PDF: ${attachment.name}]`
+            });
+          }
+        }
+        
+        messages.push({
+          role: 'user',
+          content: content
+        });
+      } else {
+        // Simple text-only message
+        messages.push({
+          role: 'user',
+          content: prompt
+        });
+      }
       
       // Always use the light model for simple chat completions
       const modelToUse = this.models[ModelType.Light];
@@ -221,7 +279,7 @@ export class ClientAnthropicService {
 
  public async classifyQueryAndDecompose(
     query: string,
-    chatHistory: Array<{role: string, content: string}> = []
+    chatHistory: Array<{role: string, content: string, attachments?: Attachment[]}> = []
   ): Promise<any> {
     try {
       // Create a powerful system prompt for query classification and decomposition
@@ -485,7 +543,7 @@ I'll classify this query for you. Here's the JSON:
     prompt: string, 
     context?: any, 
     modelType: ModelType = ModelType.Advanced,
-    streamHandler?: (chunk: string) => void
+    streamHandler?: (chunk: string) => void,
   ): Promise<any> {
     try {
       // Create the message payload
@@ -509,12 +567,22 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
       if (context) {
         messages.push({
           role: 'user',
-          content: `System: ${systemPrompt}\n\nWorkbook context: ${JSON.stringify(context)}\n\nUser: ${prompt}`
+          content: [
+            {
+              type: 'text',
+              text: `System: ${systemPrompt}\n\nWorkbook context: ${JSON.stringify(context)}\n\nUser: ${prompt}`
+            }
+          ]
         });
       } else {
         messages.push({
           role: 'user',
-          content: `System: ${systemPrompt}\n\nUser: ${prompt}`
+          content: [
+            {
+              type: 'text',
+              text: `System: ${systemPrompt}\n\nUser: ${prompt}`
+            }
+          ]
         });
       }
 
@@ -824,7 +892,7 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
   public async selectRelevantSheets(
     query: string,
     availableSheets: Array<{name: string, summary: string}>,
-    chatHistory: Array<{role: string, content: string}>
+    chatHistory: Array<{role: string, content: string, attachments?: Attachment[]}>
   ): Promise<string[]> {
     try {
       // Enhanced debug logging to track query through the method chain
@@ -1000,9 +1068,15 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
   /**
    * Extract command plan from the assistant's response
    * @param responseText The assistant's response text
+   * @param originalPrompt Optional original prompt for context
+   * @param systemPrompt Optional system prompt for context
    * @returns The extracted command plan, or null if none found
    */
-  private async extractCommandPlan(responseText: string, originalPrompt?: string, systemPrompt?: string): Promise<any> {
+  public async extractCommandPlan(
+    responseText: string, 
+    originalPrompt?: string, 
+    systemPrompt?: string
+  ): Promise<any> {
     try {
       // Look for special command markers in the response
       const commandRegex = /```json\s*([\s\S]*?)\s*```|\<command\>([\s\S]*?)\<\/command\>/i;
@@ -1086,13 +1160,16 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
    * @param userQuery The user's query about the workbook
    * @param workbookContext The compressed workbook context
    * @param streamHandler Optional callback for handling streaming responses
+   * @param chatHistory Optional chat history for context
+   * @param attachments Optional attachments (images/pdfs)
    * @returns The generated response
    */
-  async generateWorkbookExplanation(
+  public async generateWorkbookExplanation(
     userQuery: string,
     workbookContext: string,
     streamHandler?: (chunk: string) => void,
-    chatHistory?: Array<{role: string, content: string}>
+    chatHistory?: Array<{role: string, content: string, attachments?: Attachment[]}>,
+    attachments?: Attachment[]
   ): Promise<any> {
     try {
       // Create a system prompt specifically for workbook explanations
@@ -1224,17 +1301,99 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
       }
       
       // Prepare the messages array
-      const messages = [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `EXCEL WORKBOOK CONTEXT:\n${workbookContext}\n\nQUESTION: ${userQuery}\n\nCHAT HISTORY:\n${chatHistory?.map(msg => `${msg.role}: ${msg.content}`).join('\n')}`
+      const messages = [];
+      
+      // Add chat history for context
+      if (chatHistory && chatHistory.length > 0) {
+        for (const msg of chatHistory) {
+          if (msg.attachments && msg.attachments.length > 0) {
+            const content = [];
+            
+            // Add text content
+            content.push({
+              type: 'text' as const,
+              text: msg.content
+            });
+            
+            // Add attachments
+            for (const attachment of msg.attachments) {
+              if (attachment.type === 'image') {
+                content.push({
+                  type: 'image' as const,
+                  source: {
+                    type: 'base64' as const,
+                    media_type: attachment.mimeType,
+                    data: attachment.content
+                  }
+                });
+              } else if (attachment.type === 'pdf') {
+                content.push({
+                  type: 'text' as const,
+                  text: `[Attached PDF: ${attachment.name}]`
+                });
+              }
             }
-          ]
+            
+            messages.push({
+              role: msg.role as 'user' | 'assistant',
+              content: content
+            });
+          } else {
+            messages.push({
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content
+            });
+          }
         }
-      ];
+      }
+      
+      // Add workbook context
+      messages.push({
+        role: 'user',
+        content: `EXCEL WORKBOOK CONTEXT:\n${workbookContext}`
+      });
+      
+      // Add user query with attachments if any
+      if (attachments && attachments.length > 0) {
+        const content = [];
+        
+        // Add text content
+        content.push({
+          type: 'text' as const,
+          text: userQuery
+        });
+        
+        // Add image attachments
+        for (const attachment of attachments) {
+          if (attachment.type === 'image') {
+            content.push({
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          } else if (attachment.type === 'pdf') {
+            // For PDFs, add a note
+            content.push({
+              type: 'text' as const,
+              text: `[Attached PDF: ${attachment.name}]`
+            });
+          }
+        }
+        
+        messages.push({
+          role: 'user',
+          content: content
+        });
+      } else {
+        // Simple text-only message
+        messages.push({
+          role: 'user',
+          content: userQuery
+        });
+      }
       
       // Handle streaming if requested
       if (streamHandler) {
@@ -1278,8 +1437,8 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
           model: modelToUse,
           system: systemPrompt,
           messages: messages as any,
-          max_tokens: 4000,
-          temperature: 0.7,
+          max_tokens: 2000,
+          temperature: 0.2,
         });
         
         // Extract message text from the response

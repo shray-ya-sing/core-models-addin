@@ -29,15 +29,31 @@ import { ShapeEventHandler } from '../services/ShapeEventHandler';
 import { SendIcon, FileIcon, CheckIcon, AlertCircleIcon } from './icons';
 import PendingChangesBar from './PendingChangesBar';
 
-// Message type definition
+/**
+ * Attachment type definition
+ */
+interface Attachment {
+  type: 'image' | 'pdf';
+  name: string;
+  content: string; // base64 encoded content
+  mimeType: string;
+}
+
+/**
+ * Message type definition
+ */
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'status';
   content: string;
+  attachments?: Attachment[];
   isStreaming?: boolean;
   status?: StatusType;
   stage?: string;
 }
 
+/**
+ * Conversation session interface
+ */
 // Conversation session interface
 interface ConversationSession {
   id: string;
@@ -52,6 +68,10 @@ interface TailwindFinancialModelChatProps {
   newConversationTrigger?: number;
   showPastConversationsTrigger?: number;
   showVersionHistoryTrigger?: number;
+  onComponentsReady?: (components: {
+    queryProcessor: ClientQueryProcessor;
+    commandInterpreter: ClientExcelCommandInterpreter;
+  }) => void;
 }
 
 const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({ 
@@ -59,6 +79,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   showPastConversationsTrigger = 0,
   showVersionHistoryTrigger = 0
 }) => {
+  // State variables for the chat component
   // Storage key for conversations in localStorage
   const STORAGE_KEY = 'excel-addin-conversations';
   
@@ -71,6 +92,8 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   const [servicesReady, setServicesReady] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // All saved conversations
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
@@ -78,8 +101,55 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   // Current workbook ID
   const [currentWorkbookId, setCurrentWorkbookId] = useState<string>('');
   
+  // UI state for past conversations view and version history
+  const [showPastConversationsView, setShowPastConversationsView] = useState<boolean>(false);
+  const [showVersionHistoryView, setShowVersionHistoryView] = useState<boolean>(false);
+  
+  // Command approval state
+  const [approvalEnabled, setApprovalEnabled] = useState<boolean>(false);
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  
+  // Function to clear all conversations
+  const clearAllConversations = useCallback(() => {
+    // Confirm before clearing
+    if (window.confirm('Are you sure you want to clear all past conversations? This cannot be undone.')) {
+      // Clear sessions from state
+      setSessions([]);
+      
+      // Clear from localStorage
+      localStorage.removeItem(STORAGE_KEY);
+      
+      // Create a new session if needed
+      if (currentSession) {
+        const newSessionId = createNewSession();
+        setCurrentSession(newSessionId);
+      }
+    }
+  }, [currentSession]);
+  
+  // Create a new conversation session
+  const createNewSession = useCallback(() => {
+    const newSessionId = uuidv4();
+    const newSession: ConversationSession = {
+      id: newSessionId,
+      title: 'New Conversation',
+      messages: [],
+      lastUpdated: Date.now(),
+      createdAt: Date.now(),
+      workbookId: currentWorkbookId,
+    };
+
+    // Add to sessions
+    setSessions((prev) => [newSession, ...prev]);
+
+    // Save to localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([newSession]));
+
+    return newSessionId;
+  }, [currentWorkbookId]);
+
   // Filter sessions by current workbook ID
-  const getWorkbookSessions = (allSessions: ConversationSession[]): ConversationSession[] => {
+  const getWorkbookSessions = (allSessions: ConversationSession[]) => {
     // If we don't have a workbook ID yet, return all sessions
     if (!currentWorkbookId) {
       return allSessions;
@@ -87,19 +157,11 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
     
     // Filter sessions to only include those for the current workbook
     // Also include sessions without a workbookId (for backward compatibility)
-    return allSessions.filter(session => 
-      !session.workbookId || session.workbookId === currentWorkbookId
-    );
+    return allSessions.filter((session) => session.workbookId === currentWorkbookId || !session.workbookId);
   };
   
   // State to control showing all conversations
   const [showAllConversations, setShowAllConversations] = useState(false);
-  
-  // State to control showing the past conversations view
-  const [showPastConversationsView, setShowPastConversationsView] = useState(false);
-  
-  // State to control showing the version history view
-  const [showVersionHistoryView, setShowVersionHistoryView] = useState(false);
   
   // Refs
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -117,14 +179,9 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   const versionHistoryProviderRef = useRef<VersionHistoryProvider>(new VersionHistoryProvider());
   const [pendingChangesTracker, setPendingChangesTracker] = useState<PendingChangesTracker | null>(null);
   const [shapeEventHandler, setShapeEventHandler] = useState<ShapeEventHandler | null>(null);
-  const [approvalEnabled, setApprovalEnabled] = useState<boolean>(false);
-
   // Status trackers
   const [statusManager] = useState<ProcessStatusManager>(() => ProcessStatusManager.getInstance());
   const [currentStatus, setCurrentStatus] = useState<ProcessStatus | null>(null);
-  
-  // Pending changes state
-  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   
   // Function to refresh pending changes
   const refreshPendingChanges = useCallback(() => {
@@ -167,6 +224,65 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
     }
   }, [pendingChangesTracker, refreshPendingChanges]);
 
+  /**
+   * Handle file selection for attachments
+   */
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    // Process each selected file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const base64Content = e.target?.result as string;
+        // Remove the data URL prefix (e.g., 'data:image/jpeg;base64,') to get just the base64 string
+        const base64Data = base64Content.split(',')[1];
+
+        // Determine file type
+        const fileType = file.type.startsWith('image/') ? 'image' : 'pdf';
+
+        // Create attachment object
+        const newAttachment: Attachment = {
+          type: fileType,
+          name: file.name,
+          content: base64Data,
+          mimeType: file.type,
+        };
+
+        // Add to attachments
+        setAttachments((prev) => [...prev, newAttachment]);
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    // Clear the file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  /**
+   * Handle input changes in the textarea
+   */
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setUserInput(e.target.value);
+  };
+
+  /**
+   * Handle keyboard shortcuts
+   */
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Send message on Enter (without shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
   // Get current workbook ID
   const getCurrentWorkbookId = async (): Promise<string> => {
     try {
@@ -194,26 +310,6 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   };
   
   // Initialize services
-  // Effect to periodically refresh pending changes
-  useEffect(() => {
-    if (pendingChangesTracker && currentWorkbookId) {
-      // Initial refresh
-      refreshPendingChanges();
-      
-      // Set up interval to refresh pending changes
-      const intervalId = window.setInterval(() => {
-        refreshPendingChanges();
-      }, 2000); // Refresh every 2 seconds
-      
-      return () => {
-        window.clearInterval(intervalId);
-      };
-    }
-    
-    // Return empty cleanup function if conditions aren't met
-    return () => {};
-  }, [pendingChangesTracker, currentWorkbookId, refreshPendingChanges]);
-
   useEffect(() => {
     // Initialize all client services
     const initializeClientServices = async () => {
@@ -221,6 +317,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
       const workbookId = await getCurrentWorkbookId();
       setCurrentWorkbookId(workbookId);
       console.log('Current workbook ID:', workbookId);
+
       try {
         // Log initialization
         console.log('%c Initializing client services...', 'background: #222; color: #bada55; font-size: 14px');
@@ -242,7 +339,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
         // Verify the version history system is properly initialized
         console.log(`✅ [TailwindFinancialModelChat] Version history system initialized with interpreter:`, {
           hasActionRecorder: !!interpreter.getActionRecorder(),
-          workbookId: interpreter.getCurrentWorkbookId() || 'not set'
+          workbookId: interpreter.getCurrentWorkbookId() || 'not set',
         });
         
         // Now create the other services
@@ -260,8 +357,9 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
         console.log(`🔄 [TailwindFinancialModelChat] Shared components:`, {
           interpreter: interpreter,
           adapter: adapter,
-          manager: manager
+          manager: manager,
         });
+
         const anthropic = new ClientAnthropicService(config.anthropicApiKey, config.openaiApiKey);
         const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
         const processor = new ClientQueryProcessor({
@@ -269,7 +367,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           kbService: knowledgeBase,
           workbookStateManager: stateManager,
           compressor,
-          commandManager: manager
+          commandManager: manager,
         });
         
         // Initialize the multimodal analysis service with the Anthropic service and current workbook ID
@@ -318,7 +416,6 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           // If the command is completed, log it but don't add a message to the chat
           if (command.status === CommandStatus.Completed) {
             console.log(`Command "${command.description}" completed successfully.`);
-            // Removed system message
           } else if (command.status === CommandStatus.Failed) {
             console.error(`Command "${command.description}" failed: ${command.error || 'Unknown error'}`);
             // Only show error messages, not success messages
@@ -504,24 +601,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
     }
   }, [messages]);
   
-  // Session management functions
-  const createNewSession = () => {
-    const newSessionId = uuidv4();
-    const newSession: ConversationSession = {
-      id: newSessionId,
-      title: 'New Conversation', // Default title
-      messages: [],
-      lastUpdated: Date.now(),
-      createdAt: Date.now(),
-      workbookId: currentWorkbookId // Associate with current workbook
-    };
-    
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSession(newSessionId);
-    setMessages([]);
-    setHasUserSentMessage(false);
-    return newSessionId;
-  };
+ 
   
   const getSessionTitle = (messages: ChatMessage[]) => {
     // Find first user message to use as title
@@ -591,29 +671,42 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
       
       if (!servicesReady || !queryProcessor) {
         console.warn('Services not ready yet!');
-        setMessages(prev => [...prev, {
-          role: 'system',
-          content: 'Services are still initializing, please wait a moment...'
-        }]);
+      setMessages((prev) => [...prev, { role: 'system', content: 'Services are still initializing, please wait a moment...' }]);
         return;
       }
       
-      if (!userInput.trim()) return;
+    // Check if we have either text input or attachments
+    if ((!userInput.trim() && attachments.length === 0) || isLoading) return;
       
-      // Add user message to chat
+    try {
+      // Add user message to the chat
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content: userInput,
+        attachments: attachments.length > 0 ? [...attachments] : undefined,
+      };
+
+      // Add user message to the chat
+      setMessages((prevMessages) => [...prevMessages, userMessage]);
+      setHasUserSentMessage(true);
+
+      // Clear the input field and attachments
+      setUserInput('');
+      setAttachments([]);
+
+      // Set loading state
+      setIsLoading(true);
+
       // If no current session, create one
       if (!currentSession) {
         const newSessionId = createNewSession();
         setCurrentSession(newSessionId);
       }
       
-      setMessages(prev => [...prev, { role: 'user', content: userInput }]);
-      setUserInput('');
-      setIsLoading(true);
-      setHasUserSentMessage(true);
-      
-      try {
-        console.log('%c Sending query to processor:', 'background: #222; color: #f39c12; font-size: 14px', userInput.substring(0, 50));
+      console.log('%c Sending query to processor with attachments:', 'background: #222; color: #f39c12; font-size: 14px', {
+        query: userInput.substring(0, 50),
+        attachmentsCount: userMessage.attachments?.length || 0
+      });
         
         // Create a streaming response handler
         const handleStreamingResponse = (chunk: string) => {
@@ -673,7 +766,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
             console.log(`%c Passing ${chatHistory.length} messages as conversation history`, 'color: #3498db');
             
             // Pass the streaming handler and chat history to the query processor
-            return await queryProcessor.processQuery(userInput, handleStreamingResponse, chatHistory);
+            return await queryProcessor.processQuery(userInput, handleStreamingResponse, chatHistory, attachments);
           } catch (innerError) {
             console.error('Error in queryProcessor.processQuery:', innerError);
             setIsStreaming(false);
@@ -690,6 +783,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
         
         // Streaming is complete
         setIsStreaming(false);
+      setIsLoading(false);
         
         // If we weren't streaming (or streaming failed), add the complete assistant response
         // Otherwise, the streaming handler would have already added the message
@@ -770,19 +864,6 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
       }
     };
 
-    // Handle input key press (Enter to send)
-      const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          handleSendMessage();
-        }
-      };
-    
-      // Handle input change
-      const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setUserInput(e.target.value);
-      };
-
   // Watch for new conversation triggers from the header component
   useEffect(() => {
     if (newConversationTrigger > 0) {
@@ -829,9 +910,11 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   const closeVersionHistoryView = () => {
     setShowVersionHistoryView(false);
   };
-
+  
+  // Render the component
   return (
     <div className="flex flex-col h-full font-mono text-sm relative">
+      {/* Main chat interface */}
       {showVersionHistoryView ? (
         // Version History View - using the separate component
         <VersionHistoryView 
@@ -1030,8 +1113,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                 let bgColor = '';
                 let animate = false;
                 
-                // Add console logging to debug
-                console.log('Status message:', message.content, 'with status:', status);
+                // Status message handling
                 
                 // Use direct color values instead of Tailwind classes
                 switch(status) {
@@ -1190,6 +1272,30 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           
           {/* Input area */}
           <div className="bg-transparent p-2 mx-3 mb-3 rounded-lg">
+            {/* Attachment preview area */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {attachments.map((attachment, index) => (
+                  <div key={index} className="relative bg-gray-800 rounded-md p-1 flex items-center">
+                    <span className="text-xs text-white mr-1">
+                      {attachment.type === 'image' ? '🖼️' : '📄'} {attachment.name.length > 15 ? attachment.name.substring(0, 12) + '...' : attachment.name}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        setAttachments(prev => prev.filter((_, i) => i !== index));
+                      }}
+                      className="text-gray-400 hover:text-red-400 ml-1"
+                      aria-label="Remove attachment"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
             <div className="relative flex items-center border border-gray-700 hover:border-gray-500 focus-within:border-blue-500 rounded-md overflow-hidden">
               <textarea
                 ref={textareaRef}
@@ -1205,10 +1311,50 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
                 }}
               />
+              
+              {/* Attachment buttons */}
+              <div className="flex items-center mr-1">
+                {/* Image attachment button */}
               <button
-                className={`absolute right-3 p-1 rounded-md transition-all duration-300 flex items-center justify-center ${isLoading ? 'bg-red-600 animate-pulse' : 'text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30'}`}
+                  className="text-gray-500 hover:text-white p-1 rounded transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading}
+                  aria-label="Attach image"
+                  title="Attach image"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                </button>
+                
+                {/* PDF attachment button */}
+                <button
+                  className="text-gray-500 hover:text-white p-1 rounded transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading}
+                  aria-label="Attach PDF"
+                  title="Attach PDF"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                  </svg>
+                </button>
+                
+                {/* Hidden file input */}
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  className="hidden" 
+                  accept="image/*,.pdf"
+                  onChange={handleFileChange}
+                  disabled={isLoading}
+                />
+              </div>
+              
+              <button
+                className={`p-1 rounded-md transition-all duration-300 flex items-center justify-center mr-2 ${isLoading ? 'bg-red-600 animate-pulse' : 'text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30'}`}
                 onClick={handleSendMessage}
-                disabled={!userInput.trim() || isLoading || !servicesReady}
+                disabled={(!userInput.trim() && attachments.length === 0) || isLoading || !servicesReady}
                 aria-label={isLoading ? "Processing" : "Send message"}
                 type="button"
                 style={{ 

@@ -1,17 +1,19 @@
 import * as React from "react";
 import { useState } from "react";
-import { PlusIcon, ClockIcon, BookOpenIcon, MoreHorizontalIcon, XIcon, GitBranchIcon } from "lucide-react";
+import { PlusIcon, ClockIcon, BookOpenIcon, MoreHorizontalIcon, XIcon, GitBranchIcon, BeakerIcon } from "lucide-react";
 
 export interface HeaderProps {
   onNewConversation: () => void;
   onShowPastConversations: () => void;
   onShowVersionHistory?: () => void;
+  onToggleTestMode?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onNewConversation, onShowPastConversations, onShowVersionHistory }) => {
+const Header: React.FC<HeaderProps> = ({ onNewConversation, onShowPastConversations, onShowVersionHistory, onToggleTestMode }) => {
   const [showNewConversationTooltip, setShowNewConversationTooltip] = useState(false);
   const [showPastConversationsTooltip, setShowPastConversationsTooltip] = useState(false);
   const [showVersionHistoryTooltip, setShowVersionHistoryTooltip] = useState(false);
+  const [showTestModeTooltip, setShowTestModeTooltip] = useState(false);
   
   return (
     <header className="flex justify-between items-center py-1 px-2 bg-transparent z-10">
@@ -71,6 +73,25 @@ const Header: React.FC<HeaderProps> = ({ onNewConversation, onShowPastConversati
           )}
         </div>
         
+        {/* Only show test icon in non-production environments */}
+        {process.env.NODE_ENV !== 'production' && onToggleTestMode && (
+          <div className="relative">
+            <button 
+              onClick={onToggleTestMode}
+              onMouseEnter={() => setShowTestModeTooltip(true)}
+              onMouseLeave={() => setShowTestModeTooltip(false)}
+              className="flex items-center justify-center"
+              aria-label="Test Mode"
+            >
+              <BeakerIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-white hover:filter hover:brightness-200 transition-all duration-150" />
+            </button>
+            {showTestModeTooltip && (
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-gray-800 text-gray-200 text-xs rounded whitespace-nowrap">
+                Test Mode
+              </div>
+            )}
+          </div>
+        )}
         <BookOpenIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />
         <MoreHorizontalIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />
         <XIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />

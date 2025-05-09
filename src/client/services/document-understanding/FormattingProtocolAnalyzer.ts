@@ -3,9 +3,21 @@
  * Facade that coordinates formatting metadata extraction and LLM analysis
  */
 import { ClientAnthropicService, ModelType } from '../ClientAnthropicService';
-import { FormattingProtocol, WorkbookFormattingMetadata } from './FormattingModels';
 import { FormattingMetadataExtractor } from './FormattingMetadataExtractor';
+import { FormattingProtocol, WorkbookFormattingMetadata } from './FormattingModels';
 import { ExcelImageService } from '../ExcelImageService';
+
+/**
+ * Regular expression to validate base64 strings
+ * This regex checks for a valid base64 character set and proper padding
+ */
+const BASE64_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/**
+ * PNG file signature in base64 (first 8 bytes of a PNG file encoded as base64)
+ * This corresponds to the PNG magic number: 89 50 4E 47 0D 0A 1A 0A
+ */
+const PNG_SIGNATURE_BASE64_PREFIX = 'iVBORw';
 
 /**
  * System prompt for the formatting protocol analysis
@@ -370,6 +382,52 @@ export class FormattingProtocolAnalyzer {
   }
   
   /**
+   * Validates if a string is a valid base64 encoded PNG image
+   * @param base64String The base64 string to validate
+   * @returns True if the string is a valid base64 encoded PNG image, false otherwise
+   */
+  private isValidBase64PngImage(base64String: string): boolean {
+    try {
+      // Check if the string is empty or null
+      if (!base64String) {
+        console.warn('Base64 string is empty or null');
+        return false;
+      }
+      
+      // Remove data URL prefix if present
+      let cleanBase64 = base64String;
+      if (base64String.startsWith('data:image/png;base64,')) {
+        cleanBase64 = base64String.substring('data:image/png;base64,'.length);
+      }
+      
+      // Check if the string matches the base64 pattern
+      if (!BASE64_REGEX.test(cleanBase64)) {
+        console.warn('String does not match base64 pattern');
+        return false;
+      }
+      
+      // Check if the string starts with the PNG signature
+      if (!cleanBase64.startsWith(PNG_SIGNATURE_BASE64_PREFIX)) {
+        console.warn('String does not start with PNG signature');
+        return false;
+      }
+      
+      // Additional validation: check if the decoded length is reasonable
+      // PNG files should be at least a few hundred bytes
+      const decodedLength = Math.floor(cleanBase64.length * 0.75);
+      if (decodedLength < 100) {
+        console.warn('Decoded base64 length is too small for a valid PNG');
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error validating base64 PNG image:', error);
+      return false;
+    }
+  }
+  
+  /**
    * Extracts formatting metadata from the active workbook
    * @returns Promise with workbook formatting metadata
    */
@@ -512,15 +570,33 @@ export class FormattingProtocolAnalyzer {
       messageData.message
     ];
     
-    // Add images to the message content
+    // Add images to the message content, but only if they're valid
+    let validImageCount = 0;
     for (const imageBase64 of messageData.images) {
+      // Check if the image is valid before adding it
+      if (this.isValidBase64PngImage(imageBase64)) {
+        messageContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: imageBase64
+          }
+        });
+        validImageCount++;
+      } else {
+        console.warn('Skipping invalid base64 PNG image in FormattingProtocolAnalyzer');
+      }
+    }
+    
+    // Log how many valid images were added
+    console.log(`Added ${validImageCount} valid images to the message content out of ${messageData.images.length} total images`);
+    
+    // If no valid images were found, add a message indicating this
+    if (validImageCount === 0 && messageData.images.length > 0) {
       messageContent.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: 'image/png',
-          data: imageBase64
-        }
+        type: 'text',
+        text: "Note: No valid worksheet images could be processed. The analysis will be based solely on the formatting metadata."
       });
     }
     

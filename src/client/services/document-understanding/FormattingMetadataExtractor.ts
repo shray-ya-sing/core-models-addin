@@ -25,30 +25,26 @@ export class FormattingMetadataExtractor {
         // Get the workbook object
         const workbook = context.workbook;
         
-        // Get theme colors
-        const colorScheme = workbook.theme.colorScheme;
-        colorScheme.load("background1, background2, text1, text2, accent1, accent2, accent3, accent4, accent5, accent6, hyperlink, followedHyperlink");
-        
         // Get all worksheets
         const worksheets = workbook.worksheets;
         worksheets.load("items/name");
         
         await context.sync();
         
-        // Extract theme colors
+        // Use default theme colors since we can't reliably access the theme
         const themeColors: ThemeColors = {
-          background1: colorScheme.background1,
-          background2: colorScheme.background2,
-          text1: colorScheme.text1,
-          text2: colorScheme.text2,
-          accent1: colorScheme.accent1,
-          accent2: colorScheme.accent2,
-          accent3: colorScheme.accent3,
-          accent4: colorScheme.accent4,
-          accent5: colorScheme.accent5,
-          accent6: colorScheme.accent6,
-          hyperlink: colorScheme.hyperlink,
-          followedHyperlink: colorScheme.followedHyperlink
+          background1: "#FFFFFF",
+          background2: "#F2F2F2",
+          text1: "#000000",
+          text2: "#666666",
+          accent1: "#4472C4",
+          accent2: "#ED7D31",
+          accent3: "#A5A5A5",
+          accent4: "#FFC000",
+          accent5: "#5B9BD5",
+          accent6: "#70AD47",
+          hyperlink: "#0563C1",
+          followedHyperlink: "#954F72"
         };
         
         // Array to store sheet metadata
@@ -108,20 +104,15 @@ export class FormattingMetadataExtractor {
               // Load formatting properties
               cell.load("address, format/fill/color, format/font/name, format/font/bold, format/font/color, numberFormat");
               cellsToLoad.push(cell);
-              
-              // Store the original fill state to restore later
-              originalFills[cell.address] = {
-                color: null,
-                hasFill: false
-              };
             }
           }
           
           // Load all the selected cells
           await context.sync();
           
-          // Store the original fill colors
+          // Initialize originalFills with loaded cell addresses
           for (const cell of cellsToLoad) {
+            // Now it's safe to access cell.address since we've called context.sync()
             originalFills[cell.address] = {
               color: cell.format.fill.color,
               hasFill: !!cell.format.fill.color

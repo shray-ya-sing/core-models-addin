@@ -128,7 +128,7 @@ export class ClientWorkbookStateManager {
    * Invalidate the workbook state cache
    * @param operationType Optional operation type or comma-separated list of operation types to selectively invalidate based on operation
    */
-  public invalidateCache(operationType?: string): void {
+  public invalidateCache(operationType?: string, affectedRanges?: string[]): void {
     // If no operation type is provided, invalidate the full cache
     if (!operationType) {
       console.log('%c Invalidating workbook state cache (no operation type specified)', 'color: #e74c3c');
@@ -151,8 +151,37 @@ export class ClientWorkbookStateManager {
       this.cachedState = null;
       this.lastCaptureTime = 0;
       
-      // Also invalidate chunks in the metadata cache
-      this.metadataCache.invalidateAllChunks();
+      // Determine which chunks to invalidate based on operation type and affected ranges
+      const chunksToInvalidate = new Set<string>();
+      
+      // For sheet-level operations, invalidate the affected sheets
+      for (const op of operationTypes) {
+        const normalizedOp = op.toLowerCase();
+        
+        // Sheet-level operations
+        if (['create_sheet', 'delete_sheet', 'rename_sheet'].includes(normalizedOp)) {
+          this.metadataCache.getAllSheetChunks().forEach(chunk => {
+            chunksToInvalidate.add(chunk.id);
+          });
+        }
+        
+        // Range-level operations
+        if (affectedRanges && affectedRanges.length > 0) {
+          affectedRanges.forEach(range => {
+            const sheetName = range.split('!')[0];
+            chunksToInvalidate.add(`Sheet:${sheetName}`);
+            chunksToInvalidate.add(`Range:${range}`);
+          });
+        }
+      }
+      
+      // Invalidate the specific chunks
+      if (chunksToInvalidate.size > 0) {
+        this.metadataCache.invalidateChunks(Array.from(chunksToInvalidate));
+      } else {
+        // If no specific chunks to invalidate, invalidate all
+        this.metadataCache.invalidateAllChunks();
+      }
     } else {
       console.log(`%c Operations [${operationTypes.join(', ')}] do not require cache invalidation`, 'color: #2ecc71');
     }

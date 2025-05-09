@@ -83,6 +83,10 @@ export class WorkbookMetadataCache {
     const dependents = this.dependencyAnalyzer.getTransitiveDependents(chunkIds);
     dependents.forEach(id => affectedChunks.add(id));
     
+    // Find chunks that the invalidated chunks depend on (dependencies)
+    const dependencies = this.dependencyAnalyzer.getTransitiveDependencies(chunkIds);
+    dependencies.forEach(id => affectedChunks.add(id));
+    
     // Delete all affected chunks from the cache
     affectedChunks.forEach(id => {
       this.chunks.delete(id);
@@ -106,19 +110,27 @@ export class WorkbookMetadataCache {
     
     console.log(`%c Invalidating all chunks for sheet: ${sheetName}`, 'color: #e74c3c');
     
-    // Invalidate the sheet chunk and any range chunks that belong to this sheet
-    const chunksToInvalidate = Array.from(this.chunks.keys()).filter(id => {
-      // Include the sheet itself
-      if (id === sheetId) return true;
-      
-      // Include any ranges from this sheet (Range:SheetName!A1:B10 format)
-      if (id.startsWith(`Range:${sheetName}!`)) return true;
-      
-      return false;
+    // Get all chunks that depend on this sheet
+    const dependentChunks = this.dependencyAnalyzer.getTransitiveDependents([sheetId]);
+    
+    // Get all chunks that this sheet depends on
+    const dependencyChunks = this.dependencyAnalyzer.getTransitiveDependencies([sheetId]);
+    
+    // Combine all chunks to invalidate
+    const chunksToInvalidate = new Set<string>();
+    chunksToInvalidate.add(sheetId);
+    dependentChunks.forEach(id => chunksToInvalidate.add(id));
+    dependencyChunks.forEach(id => chunksToInvalidate.add(id));
+    
+    // Also invalidate any range chunks that belong to this sheet
+    Array.from(this.chunks.keys()).forEach(id => {
+      if (id.startsWith(`Range:${sheetName}!`)) {
+        chunksToInvalidate.add(id);
+      }
     });
     
-    if (chunksToInvalidate.length > 0) {
-      this.invalidateChunks(chunksToInvalidate);
+    if (chunksToInvalidate.size > 0) {
+      this.invalidateChunks(Array.from(chunksToInvalidate));
     }
   }
   

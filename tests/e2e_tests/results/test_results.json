@@ -1,0 +1,140 @@
+{
+  "scenarioId": "sample-data-001",
+  "name": "Add Sample Financial Data",
+  "success": false,
+  "steps": [
+    {
+      "stepId": "sample-data-001-step-1",
+      "query": "Add sample financial data to Sheet1 with headers for Revenue, Expenses, and Profit for Q1-Q4",
+      "success": false,
+      "message": "Cell value verification failed",
+      "details": {
+        "cellValueMatches": [
+          {
+            "address": "Sheet1!A1",
+            "expected": "Quarter",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!B1",
+            "expected": "Revenue",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C1",
+            "expected": "Expenses",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!D1",
+            "expected": "Profit",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!A2",
+            "expected": "Q1",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!B2",
+            "expected": 120000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C2",
+            "expected": 80000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!D2",
+            "expected": 40000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!A3",
+            "expected": "Q2",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!B3",
+            "expected": 145000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C3",
+            "expected": 95000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!D3",
+            "expected": 50000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!A4",
+            "expected": "Q3",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!B4",
+            "expected": 160000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C4",
+            "expected": 105000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!D4",
+            "expected": 55000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!A5",
+            "expected": "Q4",
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!B5",
+            "expected": 190000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C5",
+            "expected": 120000,
+            "actual": "",
+            "match": false
+          },
+          {
+            "address": "Sheet1!D5",
+            "expected": 70000,
+            "actual": "",
+            "match": false
+          }
+        ]
+      }
+    }
+  ],
+  "startTime": 1746727948951,
+  "endTime": 1746727961300,
+  "duration": 12349
+}

@@ -24,11 +24,19 @@ module.exports = async (env, options) => {
   const envPath = path.resolve(__dirname, '.env');
   const envVars = dotenv.config({ path: envPath }).parsed || {};
   
-  // Convert environment variables to format for DefinePlugin
+  // Set NODE_ENV with a default of 'development'
+  const NODE_ENV = process.env.NODE_ENV || 'development';
+  
+  // Add NODE_ENV to environment variables
+  envVars.NODE_ENV = NODE_ENV;
+  
   const envKeys = Object.keys(envVars).reduce((prev, next) => {
     prev[`process.env.${next}`] = JSON.stringify(envVars[next]);
     return prev;
   }, {});
+  
+  // Flag to enable/disable test UI
+  const ENABLE_TEST_UI = NODE_ENV !== 'production';
   const config = {
     devtool: "source-map",
     entry: {

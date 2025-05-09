@@ -29,6 +29,8 @@
     "test:coverage": "jest --coverage",
     "test:core-flow": "node test-core-flow.js",
     "test:ui": "npx playwright test",
+    "test:e2e": "ts-node tests/e2e_tests/runTestsFromCLI.ts",
+    "test:e2e:scenario": "ts-node tests/e2e_tests/runTestsFromCLI.ts --scenario",
     "test:ui:debug": "npx playwright test --debug",
     "validate": "office-addin-manifest validate manifest.xml",
     "watch": "webpack --mode development --watch"

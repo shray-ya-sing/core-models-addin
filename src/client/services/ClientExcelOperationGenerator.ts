@@ -2,7 +2,7 @@
 // Generates Excel operations using the Anthropic API
 
 import { v4 as uuidv4 } from 'uuid';
-import { ClientAnthropicService, ModelType } from './ClientAnthropicService';
+import { Attachment, ClientAnthropicService, ModelType } from './ClientAnthropicService';
 import { ExcelCommandPlan, ExcelOperation } from '../models/ExcelOperationModels';
 
 /**
@@ -11,6 +11,7 @@ import { ExcelCommandPlan, ExcelOperation } from '../models/ExcelOperationModels
 export class ClientExcelOperationGenerator {
   private anthropic: ClientAnthropicService;
   private debugMode: boolean;
+  private apiKey: string;
 
   constructor(params: {
     anthropic: ClientAnthropicService;
@@ -18,6 +19,8 @@ export class ClientExcelOperationGenerator {
   }) {
     this.anthropic = params.anthropic;
     this.debugMode = params.debugMode || false;
+    // get the api key from the .env file
+    this.apiKey = process.env.ANTHROPIC_API_KEY;
   }
 
   /**
@@ -55,7 +58,7 @@ export class ClientExcelOperationGenerator {
       if (this.debugMode) {
         console.log('Generating Excel operations:', {
           model: modelToUse,
-          query: query.substring(0, 50) + (query.length > 50 ? '...' : '')
+          query: query.substring(0, 50) + (query.length > 50 ? '...' : ''),
         });
       }
       
@@ -65,14 +68,11 @@ export class ClientExcelOperationGenerator {
       // select only messages that have role user or assistant
       const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
       
-      const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
       // Convert messageHistory to Anthropic message format
-      
       const anthropicMessages = messageHistory.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
       }));
-      anthropicMessages.push({ role: 'user' as const, content: userPrompt });
       
       // Call the API to generate operations
       const response = await this.anthropic.getClient().messages.create({
@@ -114,6 +114,140 @@ export class ClientExcelOperationGenerator {
       } catch (parseError) {
         console.error('Failed to parse operations JSON:', parseError);
         // Return an empty plan if parsing fails
+        return {
+          description: 'Error parsing operations',
+          operations: []
+        };
+      }
+    } catch (error: any) {
+      console.error('Error generating Excel operations:', error);
+      return {
+        description: 'Error generating operations',
+        operations: []
+      };
+    }
+  }
+
+  // Function to send a multimodal request to Anthropic API
+  public async generateOperationsWithMultimodal(
+    query: string,
+    workbookContext: string,
+    chatHistory: Array<{ role: string; content: string }>,
+    attachments?: Attachment[]
+  ): Promise<ExcelCommandPlan> {
+    try {
+      // Parse the workbook context to extract formatting protocol if available
+      let formattingProtocol = null;
+      try {
+        const parsedContext = JSON.parse(workbookContext);
+        if (parsedContext.formattingProtocol) {
+          formattingProtocol = parsedContext.formattingProtocol;
+        }
+      } catch (parseError) {
+        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
+      }
+      
+      // Create a system prompt for generating Excel operations
+      const systemPrompt = this.buildSystemPrompt(formattingProtocol);
+      
+      // Use the standard model for generating operations
+      const modelToUse = this.anthropic.getModel(ModelType.Standard);
+      
+      // Filter the chat history to only include the last 5 messages
+      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
+      const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
+      
+      // Convert messageHistory to Anthropic message format
+      const anthropicMessages = messageHistory.map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: [{ type: 'text', text: msg.content }]
+      }));
+      
+      // Create the final user message with multimodal content
+      const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
+      
+      // Prepare the content array for the final user message
+      let finalUserContent: any[] = [{ type: 'text', text: userPrompt }];
+      
+      // Add attachments if they exist
+      if (attachments && attachments.length > 0) {
+        for (const attachment of attachments) {
+          if (attachment.type === 'image') {
+            finalUserContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          } else if (attachment.type === 'pdf') {
+            finalUserContent.push({
+              type: 'image', // Anthropic handles PDFs as images with the right MIME type
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          }
+        }
+      }
+      
+      // Add the final user message to the messages array
+      anthropicMessages.push({
+        role: 'user',
+        content: finalUserContent
+      });
+      
+      // Prepare the request body
+      const requestBody = {
+        model: modelToUse,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        max_tokens: 4000,
+        temperature: 0.2
+      };
+      
+      // Make the direct API call using fetch
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01' // Use the appropriate API version
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      // Extract the response content
+      let responseContent = responseData.content?.[0]?.type === 'text' 
+        ? responseData.content[0].text 
+        : '{"description":"Error generating operations","operations":[]}';
+      
+      try {
+        // Use the extractJsonFromMarkdown utility to extract JSON from the response
+        responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
+        
+        // Parse the extracted JSON response
+        const plan = JSON.parse(responseContent) as ExcelCommandPlan;
+        
+        // Validate the operations
+        this.validateOperations(plan.operations);
+        
+        return {
+          description: plan.description || 'Excel operations',
+          operations: plan.operations || []
+        };
+      } catch (parseError) {
+        console.error('Failed to parse operations JSON:', parseError);
         return {
           description: 'Error parsing operations',
           operations: []

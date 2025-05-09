@@ -2555,6 +2555,73 @@ export class ClientExcelCommandInterpreter {
       throw error;
     }
   }
+
+  /**
+   * Format a chart with specified properties
+   * @param chartName Name of the chart to format (optional if chartIndex is provided)
+   * @param chartIndex Index of the chart to format (optional if chartName is provided)
+   * @param properties Properties to apply to the chart
+   */
+  public async formatChart(chartName?: string, chartIndex?: number, properties?: any): Promise<void> {
+    if (!chartName && chartIndex === undefined && !properties) {
+      throw new Error("Either chartName/chart or chartIndex must be specified");
+    }
+    
+    // If the third parameter is missing but second is an object, assume it's the properties
+    if (chartName && typeof chartIndex === 'object' && !properties) {
+      properties = chartIndex;
+      chartIndex = undefined;
+    }
+    
+    try {
+      await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        let chart;
+        
+        // Get chart by name or index
+        if (chartName) {
+          chart = sheet.charts.getItem(chartName);
+        } else if (chartIndex !== undefined) {
+          // Load all charts to get by index
+          const charts = sheet.charts;
+          charts.load("items");
+          await context.sync();
+          
+          if (chartIndex >= 0 && chartIndex < charts.items.length) {
+            chart = charts.items[chartIndex];
+          } else {
+            throw new Error(`Chart index ${chartIndex} is out of bounds`);
+          }
+        } else {
+          // If no specific chart is specified, use the first chart
+          const charts = sheet.charts;
+          charts.load("items");
+          await context.sync();
+          
+          if (charts.items.length > 0) {
+            chart = charts.items[0];
+          } else {
+            throw new Error("No charts found in the worksheet");
+          }
+        }
+        
+        // Apply properties based on what's provided
+        if (properties.title) {
+          if (properties.title.text) chart.title.text = properties.title.text;
+          if (properties.title.fontSize) chart.title.format.font.size = properties.title.fontSize;
+          if (properties.title.bold !== undefined) chart.title.format.font.bold = properties.title.bold;
+        }
+        
+        if (properties.legend) {
+          if (properties.legend.position) chart.legend.position = properties.legend.position;
+          if (properties.legend.visible !== undefined) chart.legend.visible = properties.legend.visible;
+        }
+        
+        await context.sync();
+      });
+    } catch (error) {
+      console.error("Error formatting chart:", error);
+      throw error;
+    }
+  }
 }
-
-
