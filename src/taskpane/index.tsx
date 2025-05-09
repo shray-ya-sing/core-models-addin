@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./components/App";
+import { injectStyles } from "../client/utils/styles";
 
 /* global document, Office, module, require, HTMLElement */
 
@@ -11,6 +12,9 @@ const root = rootElement ? createRoot(rootElement) : undefined;
 
 /* Render application after Office initializes */
 Office.onReady(() => {
+  // Inject our custom styles
+  injectStyles();
+  
   root?.render(
     <App title={title} isOfficeInitialized={true} />
   );

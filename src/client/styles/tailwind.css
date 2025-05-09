@@ -1,0 +1,70 @@
+/* Tailwind CSS imports */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  html, body, #container, textarea, input, button, p, h1, h2, h3, div, span {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  }
+}
+
+/* Custom component classes */
+.glass-dark {
+  background-color: rgba(40, 40, 40, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(76, 194, 255, 0.15);
+}
+
+.glass-darker {
+  background-color: rgba(20, 20, 20, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(76, 194, 255, 0.15);
+}
+
+/* Custom responsive font classes */
+.responsive-text {
+  font-size: calc(0.7rem + 0.4vw);
+}
+
+.responsive-sm {
+  font-size: calc(0.6rem + 0.3vw);
+}
+
+.responsive-xs {
+  font-size: calc(0.5rem + 0.2vw);
+}
+
+.responsive-icon {
+  width: calc(16px + 0.5vw);
+  height: calc(16px + 0.5vw);
+}
+
+.responsive-logo {
+  width: calc(32px + 1vw);
+  height: calc(32px + 1vw);
+}
+
+/* Custom animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Base styles for body */
+body {
+  color: #ffffff;
+  background: linear-gradient(to right bottom, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.9)), radial-gradient(circle at 50% 0%, rgba(76, 194, 255, 0.3), transparent 70%);
+  background-attachment: fixed;
+  background-size: cover;
+  min-height: 100vh;
+}

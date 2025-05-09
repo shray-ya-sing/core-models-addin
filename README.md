@@ -65,26 +65,13 @@ When the add-in runs, it:
 
     Once you are finished testing and debugging the add-in, select **Stop Previewing Your Office Add-in**. This closes the web server and removes the add-in from the registry and cache.
 
-## Use the add-in project
-
-The add-in project that you've created contains sample code for a basic task pane add-in.
-
-## Project Structure and Key Components
-
-### Core Files
-- `./manifest.xml`: Defines the settings and capabilities of the add-in
-- `./src/taskpane/taskpane.html`: Contains the HTML markup for the task pane
-- `./src/taskpane/**/*.tsx`: React components and Excel JavaScript API integration
-
-
-## Configuration
-
 ### Environment Variables
 Create a `.env` file in the root directory with the following variables:
 
 ```
 VOYAGEAI_API_KEY=your_api_key_here
 USE_MULTIMODAL_EMBEDDINGS=true
+ANTHROPIC_API_KEY=your_api_key_here
 ```
 
 ## Troubleshooting

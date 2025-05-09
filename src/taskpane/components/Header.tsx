@@ -1,50 +1,101 @@
 import * as React from "react";
-import { Image, Text, tokens, makeStyles } from "@fluentui/react-components";
+import { useState } from "react";
+import { PlusIcon, ClockIcon, BookOpenIcon, MoreHorizontalIcon, XIcon, GitBranchIcon, BeakerIcon } from "lucide-react";
 
 export interface HeaderProps {
-  title: string;
-  logo: string;
+  onNewConversation: () => void;
+  onShowPastConversations: () => void;
+  onShowVersionHistory?: () => void;
+  onToggleTestMode?: () => void;
 }
 
-const useStyles = makeStyles({
-  header: {
-    display: "flex",
-    alignItems: "center",
-    padding: "8px 12px",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: tokens.colorNeutralBackground2,
-    color: tokens.colorNeutralForeground1,
-    height: "40px",
-  },
-  logo: {
-    marginRight: "8px",
-    height: "20px",
-    width: "20px",
-  },
-  title: {
-    fontSize: tokens.fontSizeBase300,
-    fontWeight: tokens.fontWeightSemibold,
-  },
-  spacer: {
-    flexGrow: 1,
-  },
-  mode: {
-    display: "flex",
-    alignItems: "center",
-    fontSize: tokens.fontSizeBase100,
-    color: tokens.colorNeutralForeground3,
-  },
-});
-
-const Header: React.FC<HeaderProps> = (props: HeaderProps) => {
-  const { title } = props;
-  const styles = useStyles();
-
+const Header: React.FC<HeaderProps> = ({ onNewConversation, onShowPastConversations, onShowVersionHistory, onToggleTestMode }) => {
+  const [showNewConversationTooltip, setShowNewConversationTooltip] = useState(false);
+  const [showPastConversationsTooltip, setShowPastConversationsTooltip] = useState(false);
+  const [showVersionHistoryTooltip, setShowVersionHistoryTooltip] = useState(false);
+  const [showTestModeTooltip, setShowTestModeTooltip] = useState(false);
+  
   return (
-    <header className={styles.header}>
-      <Image className={styles.logo} src="assets/cori-logo.svg" alt="Cori Logo" />
-      <Text className={styles.title}>Cori</Text>
-      <div className={styles.spacer} />
+    <header className="flex justify-between items-center py-1 px-2 bg-transparent z-10">
+      <div className="flex items-center text-gray-300 font-medium text-xs">
+        Cori
+      </div>
+      <div className="flex items-center gap-2">
+        {/* Version History (Git Branch) Icon */}
+        <div className="relative">
+          <button 
+            onClick={onShowVersionHistory}
+            onMouseEnter={() => setShowVersionHistoryTooltip(true)}
+            onMouseLeave={() => setShowVersionHistoryTooltip(false)}
+            className="flex items-center justify-center"
+            aria-label="Version History"
+          >
+            <GitBranchIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-white hover:filter hover:brightness-200 transition-all duration-150" />
+          </button>
+          {showVersionHistoryTooltip && (
+            <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-gray-800 text-gray-200 text-xs rounded whitespace-nowrap">
+              Version History
+            </div>
+          )}
+        </div>
+        
+        <div className="relative">
+          <button 
+            onClick={onNewConversation}
+            onMouseEnter={() => setShowNewConversationTooltip(true)}
+            onMouseLeave={() => setShowNewConversationTooltip(false)}
+            className="flex items-center justify-center"
+            aria-label="New Conversation"
+          >
+            <PlusIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-white hover:filter hover:brightness-200 transition-all duration-150" />
+          </button>
+          {showNewConversationTooltip && (
+            <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-gray-800 text-gray-200 text-xs rounded whitespace-nowrap">
+              New Conversation
+            </div>
+          )}
+        </div>
+        
+        <div className="relative">
+          <button 
+            onClick={onShowPastConversations}
+            onMouseEnter={() => setShowPastConversationsTooltip(true)}
+            onMouseLeave={() => setShowPastConversationsTooltip(false)}
+            className="flex items-center justify-center"
+            aria-label="Past Conversations"
+          >
+            <ClockIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-white hover:filter hover:brightness-200 transition-all duration-150" />
+          </button>
+          {showPastConversationsTooltip && (
+            <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-gray-800 text-gray-200 text-xs rounded whitespace-nowrap">
+              Past Conversations
+            </div>
+          )}
+        </div>
+        
+        {/* Only show test icon in non-production environments */}
+        {process.env.NODE_ENV !== 'production' && onToggleTestMode && (
+          <div className="relative">
+            <button 
+              onClick={onToggleTestMode}
+              onMouseEnter={() => setShowTestModeTooltip(true)}
+              onMouseLeave={() => setShowTestModeTooltip(false)}
+              className="flex items-center justify-center"
+              aria-label="Test Mode"
+            >
+              <BeakerIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-white hover:filter hover:brightness-200 transition-all duration-150" />
+            </button>
+            {showTestModeTooltip && (
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-gray-800 text-gray-200 text-xs rounded whitespace-nowrap">
+                Test Mode
+              </div>
+            )}
+          </div>
+        )}
+        <BookOpenIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />
+        <MoreHorizontalIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />
+        <XIcon className="w-3 h-3 text-gray-400 cursor-pointer hover:text-gray-300 transition-colors" />
+      </div>
     </header>
   );
 };

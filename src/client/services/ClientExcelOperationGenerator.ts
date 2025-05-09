@@ -2,7 +2,7 @@
 // Generates Excel operations using the Anthropic API
 
 import { v4 as uuidv4 } from 'uuid';
-import { ClientAnthropicService, ModelType } from './ClientAnthropicService';
+import { Attachment, ClientAnthropicService, ModelType } from './ClientAnthropicService';
 import { ExcelCommandPlan, ExcelOperation } from '../models/ExcelOperationModels';
 
 /**
@@ -11,6 +11,7 @@ import { ExcelCommandPlan, ExcelOperation } from '../models/ExcelOperationModels
 export class ClientExcelOperationGenerator {
   private anthropic: ClientAnthropicService;
   private debugMode: boolean;
+  private apiKey: string;
 
   constructor(params: {
     anthropic: ClientAnthropicService;
@@ -18,6 +19,8 @@ export class ClientExcelOperationGenerator {
   }) {
     this.anthropic = params.anthropic;
     this.debugMode = params.debugMode || false;
+    // get the api key from the .env file
+    this.apiKey = process.env.ANTHROPIC_API_KEY;
   }
 
   /**
@@ -32,8 +35,22 @@ export class ClientExcelOperationGenerator {
     chatHistory: Array<{ role: string; content: string }>
   ): Promise<ExcelCommandPlan> {
     try {
+      // Parse the workbook context to extract formatting protocol if available
+      let formattingProtocol = null;
+      try {
+        const parsedContext = JSON.parse(workbookContext);
+        if (parsedContext.formattingProtocol) {
+          formattingProtocol = parsedContext.formattingProtocol;
+          if (this.debugMode) {
+            console.log('Found formatting protocol in workbook context');
+          }
+        }
+      } catch (parseError) {
+        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
+      }
+      
       // Create a system prompt for generating Excel operations
-      const systemPrompt = this.buildSystemPrompt();
+      const systemPrompt = this.buildSystemPrompt(formattingProtocol);
       
       // Use the standard model for generating operations
       const modelToUse = this.anthropic.getModel(ModelType.Standard);
@@ -41,7 +58,7 @@ export class ClientExcelOperationGenerator {
       if (this.debugMode) {
         console.log('Generating Excel operations:', {
           model: modelToUse,
-          query: query.substring(0, 50) + (query.length > 50 ? '...' : '')
+          query: query.substring(0, 50) + (query.length > 50 ? '...' : ''),
         });
       }
       
@@ -51,14 +68,11 @@ export class ClientExcelOperationGenerator {
       // select only messages that have role user or assistant
       const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
       
-      const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
       // Convert messageHistory to Anthropic message format
-      
       const anthropicMessages = messageHistory.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
       }));
-      anthropicMessages.push({ role: 'user' as const, content: userPrompt });
       
       // Call the API to generate operations
       const response = await this.anthropic.getClient().messages.create({
@@ -80,7 +94,7 @@ export class ClientExcelOperationGenerator {
         responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
         
         if (this.debugMode) {
-          console.log('Extracted JSON from response:', responseContent.substring(0, 100) + '...');
+          console.log('Extracted JSON from response:', responseContent);
         }
         
         // Parse the extracted JSON response
@@ -100,6 +114,140 @@ export class ClientExcelOperationGenerator {
       } catch (parseError) {
         console.error('Failed to parse operations JSON:', parseError);
         // Return an empty plan if parsing fails
+        return {
+          description: 'Error parsing operations',
+          operations: []
+        };
+      }
+    } catch (error: any) {
+      console.error('Error generating Excel operations:', error);
+      return {
+        description: 'Error generating operations',
+        operations: []
+      };
+    }
+  }
+
+  // Function to send a multimodal request to Anthropic API
+  public async generateOperationsWithMultimodal(
+    query: string,
+    workbookContext: string,
+    chatHistory: Array<{ role: string; content: string }>,
+    attachments?: Attachment[]
+  ): Promise<ExcelCommandPlan> {
+    try {
+      // Parse the workbook context to extract formatting protocol if available
+      let formattingProtocol = null;
+      try {
+        const parsedContext = JSON.parse(workbookContext);
+        if (parsedContext.formattingProtocol) {
+          formattingProtocol = parsedContext.formattingProtocol;
+        }
+      } catch (parseError) {
+        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
+      }
+      
+      // Create a system prompt for generating Excel operations
+      const systemPrompt = this.buildSystemPrompt(formattingProtocol);
+      
+      // Use the standard model for generating operations
+      const modelToUse = this.anthropic.getModel(ModelType.Standard);
+      
+      // Filter the chat history to only include the last 5 messages
+      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
+      const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
+      
+      // Convert messageHistory to Anthropic message format
+      const anthropicMessages = messageHistory.map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: [{ type: 'text', text: msg.content }]
+      }));
+      
+      // Create the final user message with multimodal content
+      const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
+      
+      // Prepare the content array for the final user message
+      let finalUserContent: any[] = [{ type: 'text', text: userPrompt }];
+      
+      // Add attachments if they exist
+      if (attachments && attachments.length > 0) {
+        for (const attachment of attachments) {
+          if (attachment.type === 'image') {
+            finalUserContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          } else if (attachment.type === 'pdf') {
+            finalUserContent.push({
+              type: 'image', // Anthropic handles PDFs as images with the right MIME type
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType,
+                data: attachment.content
+              }
+            });
+          }
+        }
+      }
+      
+      // Add the final user message to the messages array
+      anthropicMessages.push({
+        role: 'user',
+        content: finalUserContent
+      });
+      
+      // Prepare the request body
+      const requestBody = {
+        model: modelToUse,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        max_tokens: 4000,
+        temperature: 0.2
+      };
+      
+      // Make the direct API call using fetch
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01' // Use the appropriate API version
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      // Extract the response content
+      let responseContent = responseData.content?.[0]?.type === 'text' 
+        ? responseData.content[0].text 
+        : '{"description":"Error generating operations","operations":[]}';
+      
+      try {
+        // Use the extractJsonFromMarkdown utility to extract JSON from the response
+        responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
+        
+        // Parse the extracted JSON response
+        const plan = JSON.parse(responseContent) as ExcelCommandPlan;
+        
+        // Validate the operations
+        this.validateOperations(plan.operations);
+        
+        return {
+          description: plan.description || 'Excel operations',
+          operations: plan.operations || []
+        };
+      } catch (parseError) {
+        console.error('Failed to parse operations JSON:', parseError);
         return {
           description: 'Error parsing operations',
           operations: []
@@ -134,10 +282,104 @@ export class ClientExcelOperationGenerator {
   
   /**
    * Build the system prompt for generating Excel operations
+   * @param formattingProtocol Optional formatting protocol to include in the prompt
    * @returns The system prompt
    */
-  private buildSystemPrompt(): string {
-    return `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
+  private buildSystemPrompt(formattingProtocol: any = null): string {
+    let basePrompt = `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
+
+CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.`;
+    
+    // Add formatting protocol instructions if available
+    if (formattingProtocol) {
+      basePrompt += `
+
+IMPORTANT: When generating operations that involve formatting or styling, follow the user's existing formatting conventions as described below. This ensures consistency with the user's workbook design.
+
+FORMATTING PROTOCOL:
+`;
+      
+      // Add color coding instructions
+      if (formattingProtocol.colorCoding) {
+        basePrompt += `
+COLOR CODING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.colorCoding.inputs) {
+          basePrompt += `- Input cells: ${formattingProtocol.colorCoding.inputs}
+`;
+        }
+        if (formattingProtocol.colorCoding.calculations) {
+          basePrompt += `- Calculation cells: ${formattingProtocol.colorCoding.calculations}
+`;
+        }
+        if (formattingProtocol.colorCoding.hardcodedValues) {
+          basePrompt += `- Hardcoded values: ${formattingProtocol.colorCoding.hardcodedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.linkedValues) {
+          basePrompt += `- Linked values: ${formattingProtocol.colorCoding.linkedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.headers) {
+          basePrompt += `- Headers: ${formattingProtocol.colorCoding.headers}
+`;
+        }
+        if (formattingProtocol.colorCoding.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.colorCoding.totals}
+`;
+        }
+      }
+      
+      // Add number formatting instructions
+      if (formattingProtocol.numberFormatting) {
+        basePrompt += `
+NUMBER FORMATTING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.numberFormatting.currency) {
+          basePrompt += `- Currency: ${formattingProtocol.numberFormatting.currency}
+`;
+        }
+        if (formattingProtocol.numberFormatting.percentage) {
+          basePrompt += `- Percentage: ${formattingProtocol.numberFormatting.percentage}
+`;
+        }
+        if (formattingProtocol.numberFormatting.date) {
+          basePrompt += `- Date: ${formattingProtocol.numberFormatting.date}
+`;
+        }
+        if (formattingProtocol.numberFormatting.general) {
+          basePrompt += `- General: ${formattingProtocol.numberFormatting.general}
+`;
+        }
+      }
+      
+      // Add border styling instructions
+      if (formattingProtocol.borderStyles) {
+        basePrompt += `
+BORDER STYLING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.borderStyles.tables) {
+          basePrompt += `- Tables: ${formattingProtocol.borderStyles.tables}
+`;
+        }
+        if (formattingProtocol.borderStyles.sections) {
+          basePrompt += `- Sections: ${formattingProtocol.borderStyles.sections}
+`;
+        }
+        if (formattingProtocol.borderStyles.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.borderStyles.totals}
+`;
+        }
+      }
+      
+      basePrompt += `
+When creating new elements in the workbook, ensure they follow these formatting conventions for consistency.`;
+    }
+    
+    basePrompt += `
 
 OUTPUT FORMAT:
 You must respond with a JSON object that follows this schema:
@@ -149,7 +391,9 @@ You must respond with a JSON object that follows this schema:
       ...                 // Additional fields specific to the operation type
     }
   ]
-}
+}`;
+    
+    return basePrompt + `
 
 ALLOWED OPERATION TYPES:
 - set_value: Set a value in a cell
@@ -162,12 +406,18 @@ ALLOWED OPERATION TYPES:
 - filter_range: Filter a range
 - create_sheet: Create a new worksheet
 - delete_sheet: Delete a worksheet
-- rename_sheet: Rename a worksheet
 - copy_range: Copy a range to another location
 - merge_cells: Merge cells
 - unmerge_cells: Unmerge cells
 - conditional_format: Add conditional formatting
 - add_comment: Add a comment to a cell
+- set_freeze_panes: Freeze rows or columns
+- set_active_sheet: Set the active worksheet
+- set_print_settings: Set print settings
+- set_page_setup: Set page setup
+- export_to_pdf: Export worksheet to PDF
+- set_worksheet_settings: Set worksheet settings
+- format_chart: Format a chart
 
 OPERATION SCHEMAS:
 
@@ -253,33 +503,26 @@ OPERATION SCHEMAS:
   "name": string          // Name of the sheet to delete
 }
 
-11. rename_sheet:
-{
-  "op": "rename_sheet",
-  "oldName": string,      // Current sheet name
-  "newName": string       // New sheet name
-}
-
-12. copy_range:
+11. copy_range:
 {
   "op": "copy_range",
   "source": string,       // Source range (e.g. "Sheet1!A1:D10")
   "destination": string   // Destination cell (e.g. "Sheet2!A1")
 }
 
-13. merge_cells:
+12. merge_cells:
 {
   "op": "merge_cells",
   "range": string         // Range to merge (e.g. "Sheet1!A1:D1")
 }
 
-14. unmerge_cells:
+13. unmerge_cells:
 {
   "op": "unmerge_cells",
   "range": string         // Range to unmerge (e.g. "Sheet1!A1:D1")
 }
 
-15. conditional_format:
+14. conditional_format:
 {
   "op": "conditional_format",
   "range": string,        // Range to format (e.g. "Sheet1!A1:D10")
@@ -293,16 +536,205 @@ OPERATION SCHEMAS:
   }
 }
 
-16. add_comment:
+15. add_comment:
 {
   "op": "add_comment",
   "target": string,       // Cell reference (e.g. "Sheet1!A1")
   "text": string          // Comment text
 }
 
+16. set_freeze_panes:
+{
+  "op": "set_freeze_panes",
+  "sheet": string,         // Sheet name
+  "address": string        // Cell address to freeze at (e.g. "B3")
+  "freeze": boolean        // Whether to freeze panes. True if the user wants to freeze panes and false if they want to unfreeze.
+}
+
+17. set_print_settings:
+{
+  "op": "set_print_settings",
+  "sheet": string,         // Sheet name
+  blackAndWhite: boolean,  // Whether to print in black and white
+  draftMode: boolean,      // Whether to print in draft mode
+  firstPageNumber: number, // First page number
+  headings: boolean,       // Whether to display row/column headings when printing
+  orientation: string,     // "portrait" or "landscape"
+  printAreas: string[],    // Ranges to set as print areas (e.g. ["A1:H20", "A20:H40"])
+  printComments: string,   // "none", "at_end", "as_displayed"
+  headerMargin: number,    // Header margin in inches
+  footerMargin: number,    // Footer margin in inches
+  leftMargin: number,      // Left margin in inches
+  rightMargin: number,     // Right margin in inches
+  topMargin: number,       // Top margin in inches
+  bottomMargin: number,    // Bottom margin in inches
+  printErrors: string,     // "blank", "dash", "displayed", "na"
+  headerRows: number,      // Number of header rows
+  footerRows: number,      // Number of footer rows 
+  printTitles: string[],   // Ranges to set as print titles (e.g. ["A1:H1", "A1:H1"])
+  printGridlines: boolean, // Whether to display gridlines when printing
+}
+
+18. set_page_setup:
+{
+  "op": "set_page_setup",
+  "sheet": string,         // Sheet name
+  "pageLayoutView": string,    // "print", "normal", "pageBreakPreview"
+  "zoom": number,          // Zoom percentage
+  "gridlines": boolean,    // Whether to display gridlines
+  "headers": boolean,      // Whether to display row and column headers
+  "showFormulas": boolean, // Whether to display formulas instead of values
+  "showHeadings": boolean  // Whether to display row and column headings
+}
+
+19. export_to_pdf:
+{
+  "op": "export_to_pdf",
+  "sheet": string,         // Sheet name to export
+  "fileName": string,      // Optional name for the PDF file (without extension)
+  "quality": string,       // Optional PDF quality: "standard" or "minimal"
+  "includeComments": boolean, // Optional: whether to include comments
+  "printArea": string,     // Optional print area to export (e.g., "A1:H20")
+  "orientation": string,   // Optional page orientation: "portrait" or "landscape"
+  "fitToPage": boolean,    // Optional: whether to fit content to page
+  "margins": {             // Optional page margins in points
+    "top": number,
+    "right": number,
+    "bottom": number,
+    "left": number
+  }
+}
+
+20. set_worksheet_settings:
+{
+  "op": "set_worksheet_settings",
+  "sheet": string,         // Sheet name
+  "pageLayoutView": string,    // "print", "normal", "pageBreakPreview"
+  "zoom": number,          // Zoom percentage
+  "gridlines": boolean,    // Whether to display gridlines
+  "headers": boolean,      // Whether to display row and column headers
+  "showFormulas": boolean, // Whether to display formulas instead of values
+  "showHeadings": boolean  // Whether to display row and column headings
+  "position": int          // index of the sheet in the whole workbook. 0 based.
+  "enableCalculation": boolean // Whether to enable calculation
+  "visibility": boolean    // Whether to make the sheet visible
+}
+
+21. format_chart:
+{
+  "op": "format_chart",
+  "sheet": string,         // Sheet name
+  "chart": string,         // Chart name
+  "title": string,         // Chart title
+  "type": string,          // Chart type
+  "dataSource": string,    // Chart data source cell range address
+  "legend": boolean,        // Chart legend
+  "axis": boolean,          // Chart axis
+  "series": string,        // Chart series
+  "dataLabels": boolean,    // Chart data labels
+  
+  // Chart Dimension properties
+  "width": number,         // Chart width
+  "height": number,        // Chart height
+  
+  // Chart position properties
+  "left": number,          // Chart left position
+  "top": number,           // Chart top position
+
+    // Chart format properties
+  "fillColor": string, // Chart fill color
+  "borderVisible": boolean, // Chart border visibility
+  "borderColor": string, // Chart border color
+  "borderWidth": number, // Chart border width
+  "borderStyle": string, // Chart border style
+  "borderDashStyle": string, // Chart border dash style
+  
+  // Chart title properties
+  "titleVisible": boolean, // Whether title is visible
+  "titleFontName": string, // Title font name
+  "titleFontSize": number, // Title font size
+  "titleFontStyle": string, // Title font style
+  "titleFontBold": boolean, // Title font bold
+  "titleFontItalic": boolean, // Title font italic
+  "titleFontColor": string, // Title font color
+  "titleFormat": string, // Title format
+
+  // Legend properties
+  "legendVisible": boolean, // Whether legend is visible
+  "legendFontName": string, // Legend font name
+  "legendFontSize": number, // Legend font size
+  "legendFontStyle": string, // Legend font style
+  "legendFontBold": boolean, // Legend font bold
+  "legendFontItalic": boolean, // Legend font italic
+  "legendFontColor": string, // Legend font color
+  "legendFormat": string, // Legend format
+
+  // Chart axis properties
+  "axisVisible": boolean, // Whether axis is visible
+  "axisFontName": string, // Axis font name
+  "axisFontSize": number, // Axis font size
+  "axisFontStyle": string, // Axis font style
+  "axisFontBold": boolean, // Axis font bold
+  "axisFontItalic": boolean, // Axis font italic
+  "axisFontColor": string, // Axis font color
+  "axisFormat": string, // Axis format
+
+  // Chart series properties
+  "seriesVisible": boolean, // Whether series is visible
+  "seriesFontName": string, // Series font name
+  "seriesFontSize": number, // Series font size
+  "seriesFontStyle": string, // Series font style
+  "seriesFontBold": boolean, // Series font bold
+  "seriesFontItalic": boolean, // Series font italic
+  "seriesFontColor": string, // Series font color
+  "seriesFormat": string, // Series format
+
+  // Chart data labels properties
+  "dataLabelsVisible": boolean, // Whether data labels are visible
+  "dataLabelsFontName": string, // Data labels font name
+  "dataLabelsFontSize": number, // Data labels font size
+  "dataLabelsFontStyle": string, // Data labels font style
+  "dataLabelsFontBold": boolean, // Data labels font bold
+  "dataLabelsFontItalic": boolean, // Data labels font italic
+  "dataLabelsFontColor": string, // Data labels font color
+  "dataLabelsFormat": string, // Data labels format
+
+}
+
+22. set_calculation_options:
+{
+  "op": "set_calculation_options",
+  "calculationMode": string, // Optional calculation mode (e.g. "auto", "manual")
+  "iterative": boolean,      // Optional whether to enable iterative calculation
+  "maxIterations": number,   // Optional maximum number of iterations for iterative calculation
+  "maxChange": number,       // Optional maximum change for iterative calculation
+  "calculate": boolean,      // Optional whether to calculate the workbook
+  "calculationType": string  // Optional calculation type (e.g. "full", "full_recalculate", "recalculate")
+}
+
+23. recalculate_ranges:
+  {
+    "op": "recalculate_ranges",
+    "recalculateAll": boolean, // Optional whether to recalculate all sheets
+    "sheets": string[] // List of sheet names to recalculate
+    "ranges": string[] // List of cell range addresses to recalculate
+  }
+
 EXAMPLES:
 
-Example 1 - Set values and add a formula:
+Example 1 - Create a new worksheet (minimal operation):
+User: "Add a new tab called Sales"
+{
+  "description": "Create new Sales worksheet",
+  "operations": [
+    {
+      "op": "create_sheet",
+      "name": "Sales"
+    }
+  ]
+}
+
+Example 2 - Set values and add a formula (only what's requested):
 User: "Put 10 in cell A1, 20 in cell A2, and calculate the sum in A3"
 {
   "description": "Set values and calculate sum",
@@ -325,7 +757,7 @@ User: "Put 10 in cell A1, 20 in cell A2, and calculate the sum in A3"
   ]
 }
 
-Example 2 - Create a chart:
+Example 3 - Create a chart (only what's requested):
 User: "Create a column chart for sales data in range A1:B10 with the title 'Sales Report'"
 {
   "description": "Create sales chart",
@@ -340,7 +772,7 @@ User: "Create a column chart for sales data in range A1:B10 with the title 'Sale
   ]
 }
 
-Example 3 - Format cells:
+Example 4 - Format cells (only what's requested):
 User: "Format cells B2:B10 as currency and make them bold"
 {
   "description": "Format cells as currency and bold",
@@ -354,27 +786,34 @@ User: "Format cells B2:B10 as currency and make them bold"
   ]
 }
 
-Example 4 - Create a table and sort:
-User: "Create a table from data in A1:D10 and sort it by column B in descending order"
+Example 5 - Freeze panes (single operation):
+User: "Freeze the first row"
 {
-  "description": "Create and sort table",
+  "description": "Freeze first row",
   "operations": [
     {
-      "op": "create_table",
-      "range": "Sheet1!A1:D10",
-      "hasHeaders": true
-    },
-    {
-      "op": "sort_range",
-      "range": "Sheet1!A1:D10",
-      "sortBy": "B",
-      "sortDirection": "descending",
-      "hasHeaders": true
+      "op": "set_freeze_panes",
+      "sheet": "Sheet1",
+      "row": 1,
+      "column": 0
     }
   ]
 }
 
-Example 5 - Multiple operations:
+Example 5a - Freeze panes using cell address:
+User: "Freeze panes at cell B3"
+{
+  "description": "Freeze panes at cell B3",
+  "operations": [
+    {
+      "op": "set_freeze_panes",
+      "sheet": "Sheet1",
+      "address": "B3"      // Use address for cell reference instead of row/column
+    }
+  ]
+}
+
+Example 6 - Multiple explicitly requested operations:
 User: "Create a new sheet called 'Summary', copy data from Sheet1!A1:D10 to Summary!A1, and format as currency"
 {
   "description": "Create summary sheet with formatted data",
@@ -397,12 +836,29 @@ User: "Create a new sheet called 'Summary', copy data from Sheet1!A1:D10 to Summ
 }
 
 Important rules:
-1. Always use the exact operation types listed above
-2. Include all required fields for each operation type
-3. Make sure cell references include the sheet name (e.g. "Sheet1!A1")
-4. Generate operations in the correct order for execution
-5. Only include fields that are relevant to the operation
-6. Use the most appropriate operation types for the task
-7. Be precise with ranges and cell references`;
+1. ONLY generate operations that the user EXPLICITLY requests - this is the most important rule
+2. Keep the number of operations to the absolute minimum required to fulfill the user's request
+3. Do not add any "helpful" operations that weren't requested
+4. Do not populate new worksheets with data unless specifically requested
+5. Always use the exact operation types listed above
+6. Include all required fields for each operation type
+7. Make sure cell references include the sheet name (e.g. "Sheet1!A1")
+8. Generate operations in the correct order for execution
+9. Only include fields that are relevant to the operation
+10. Use the most appropriate operation types for the task
+11. Be precise with ranges and cell references
+
+REMEMBER: If the user asks for a simple operation like "add a new tab named Sales", your response should ONLY include that specific operation and nothing more. Do not add any data, formatting, or additional operations.
+
+ANTI-PATTERNS TO AVOID:
+1. DO NOT create sample data unless explicitly requested
+2. DO NOT add formatting to make things "look nice" unless explicitly requested
+3. DO NOT create charts or visualizations unless explicitly requested
+4. DO NOT add formulas or calculations unless explicitly requested
+5. DO NOT add headers or labels unless explicitly requested
+6. DO NOT create multiple sheets when only one was requested
+7. DO NOT add operations that seem "helpful" but weren't requested
+
+When in doubt, be minimalist and only do exactly what was asked.`;
   }
 }

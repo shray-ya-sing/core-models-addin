@@ -1,0 +1,194 @@
+{
+  "scenarioId": "sample-data-001",
+  "name": "Add Sample Financial Data",
+  "success": false,
+  "steps": [
+    {
+      "stepId": "sample-data-001-step-1",
+      "query": "In Sheet1, add Q1-Q4 as headers in cells B1-E1, then add Revenue in cell A2 with values 120000, 145000, 160000, 190000 in cells B2-E2, Expenses in cell A3 with values 80000, 95000, 105000, 125000 in cells B3-E3, and Profit in cell A4 with values 40000, 50000, 55000, 65000 in cells B4-E4",
+      "success": true,
+      "message": "All verifications passed",
+      "details": {
+        "cellValueMatches": [
+          {
+            "address": "Sheet1!A1",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B1",
+            "expected": "Q1",
+            "actual": "Q1",
+            "match": true
+          },
+          {
+            "address": "Sheet1!C1",
+            "expected": "Q2",
+            "actual": "Q2",
+            "match": true
+          },
+          {
+            "address": "Sheet1!D1",
+            "expected": "Q3",
+            "actual": "Q3",
+            "match": true
+          },
+          {
+            "address": "Sheet1!E1",
+            "expected": "Q4",
+            "actual": "Q4",
+            "match": true
+          },
+          {
+            "address": "Sheet1!A2",
+            "expected": "Revenue",
+            "actual": "Revenue",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B2",
+            "expected": 120000,
+            "actual": 120000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!C2",
+            "expected": 145000,
+            "actual": 145000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!D2",
+            "expected": 160000,
+            "actual": 160000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!E2",
+            "expected": 190000,
+            "actual": 190000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!A3",
+            "expected": "Expenses",
+            "actual": "Expenses",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B3",
+            "expected": 80000,
+            "actual": 80000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!C3",
+            "expected": 95000,
+            "actual": 95000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!D3",
+            "expected": 105000,
+            "actual": 105000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!E3",
+            "expected": 125000,
+            "actual": 125000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!A4",
+            "expected": "Profit",
+            "actual": "Profit",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B4",
+            "expected": 40000,
+            "actual": 40000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!C4",
+            "expected": 50000,
+            "actual": 50000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!D4",
+            "expected": 55000,
+            "actual": 55000,
+            "match": true
+          },
+          {
+            "address": "Sheet1!E4",
+            "expected": 65000,
+            "actual": 65000,
+            "match": true
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "sample-data-001-step-2",
+      "query": "Clear all data in Sheet1",
+      "success": false,
+      "message": "Cell value verification failed",
+      "details": {
+        "cellValueMatches": [
+          {
+            "address": "Sheet1!A1",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B1",
+            "expected": "",
+            "actual": "Q1",
+            "match": false
+          },
+          {
+            "address": "Sheet1!C1",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!D1",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!E1",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!A2",
+            "expected": "",
+            "actual": "",
+            "match": true
+          },
+          {
+            "address": "Sheet1!B2",
+            "expected": "",
+            "actual": "",
+            "match": true
+          }
+        ]
+      }
+    }
+  ],
+  "startTime": 1746735982987,
+  "endTime": 1746736032329,
+  "duration": 49342,
+  "testQuery": "In Sheet1, add Q1-Q4 as headers in cells B1-E1, then add Revenue in cell A2 with values 120000, 145000, 160000, 190000 in cells B2-E2, Expenses in cell A3 with values 80000, 95000, 105000, 125000 in cells B3-E3, and Profit in cell A4 with values 40000, 50000, 55000, 65000 in cells B4-E4",
+  "testDescription": "Tests adding sample financial data to a blank workbook"
+}

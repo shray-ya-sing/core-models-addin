@@ -13,10 +13,21 @@ export class ClientCommandManager {
   private workbookStateManager: ClientWorkbookStateManager | null = null;
   private commandUpdateListeners: ((command: Command) => void)[] = [];
 
-  constructor(commandExecutor: ClientCommandExecutor, workbookStateManager?: ClientWorkbookStateManager) {
+  /**
+   * Create a new ClientCommandManager
+   * @param commandExecutor The command executor to use
+   * @param workbookStateManager Optional workbook state manager
+   * @param excelCommandAdapter Optional existing adapter instance to use. If not provided, a new one will be created.
+   */
+  constructor(
+    commandExecutor: ClientCommandExecutor, 
+    workbookStateManager?: ClientWorkbookStateManager,
+    excelCommandAdapter?: ClientExcelCommandAdapter
+  ) {
     this.commandExecutor = commandExecutor;
-    this.excelCommandAdapter = new ClientExcelCommandAdapter();
+    this.excelCommandAdapter = excelCommandAdapter || new ClientExcelCommandAdapter();
     this.workbookStateManager = workbookStateManager || null;
+    console.log(`🔄 [ClientCommandManager] Using ${excelCommandAdapter ? 'provided' : 'new'} adapter instance`);
   }
 
   /**
@@ -173,26 +184,29 @@ export class ClientCommandManager {
   /**
    * Invalidate the workbook state cache if available
    * This should be called whenever the workbook is modified
+   * @param operationType Optional operation type to selectively invalidate based on operation
    */
-  private invalidateWorkbookCache(): void {
+  private invalidateWorkbookCache(operationType?: string): void {
     if (this.workbookStateManager) {
-      console.log('%c Invalidating workbook state cache after command execution', 'color: #e74c3c');
-      this.workbookStateManager.invalidateCache();
+      console.log('%c Checking cache invalidation for operation type: ' + (operationType || 'unknown'), 'color: #3498db');
+      this.workbookStateManager.invalidateCache(operationType);
     }
   }
 
   public async executeCommand(commandId: string): Promise<void> {
-    const command = this.commands.get(commandId);
+    console.log(`🔍 [ClientCommandManager] executeCommand called with ID: ${commandId}`);
+    
+    const command = this.getCommand(commandId);
     if (!command) {
-      throw new Error(`Command not found: ${commandId}`);
+      throw new Error(`Command with ID ${commandId} not found`);
     }
+    
+    console.log(`📋 [ClientCommandManager] Executing command: ${command.description} (ID: ${commandId})`);
+    console.log(`🔢 [ClientCommandManager] Command has ${command.steps.length} steps with ${command.steps.reduce((total, step) => total + step.operations.length, 0)} total operations`);
     
     try {
       // Update command status to running
       this.updateCommandStatus(commandId, CommandStatus.Running);
-      
-      // Invalidate cache at the start of command execution
-      this.invalidateWorkbookCache();
       
       // Check if this is an Excel DSL command by looking for operations with 'op' property in their value
       const hasExcelOperations = command.steps.some(step => 
@@ -201,10 +215,32 @@ export class ClientCommandManager {
         )
       );
       
+      // Get operation types for selective cache invalidation
+      let operationTypes: string[] = [];
+      if (hasExcelOperations) {
+        // Extract all operation types from the command
+        command.steps.forEach(step => {
+          step.operations.forEach(operation => {
+            if (operation.value && typeof operation.value === 'object' && 'op' in operation.value) {
+              const opType = operation.value.op as string;
+              if (opType && !operationTypes.includes(opType)) {
+                operationTypes.push(opType);
+              }
+            }
+          });
+        });
+      }
+      
+      // Log the operation types for debugging
+      if (operationTypes.length > 0) {
+        console.log(`Command contains operation types: ${operationTypes.join(', ')}`);
+      }
+      
       if (hasExcelOperations) {
         // Use the Excel command adapter for DSL operations
         try {
-          await this.excelCommandAdapter.executeCommand(command);
+          // Execute the command and get the actual operation types that were executed
+          const executedOperationTypes = await this.excelCommandAdapter.executeCommand(command);
           
           // Mark all steps and operations as completed
           for (let i = 0; i < command.steps.length; i++) {
@@ -213,6 +249,23 @@ export class ClientCommandManager {
             const step = command.steps[i];
             for (let j = 0; j < step.operations.length; j++) {
               this.updateOperationStatus(commandId, i, j, 'completed');
+            }
+          }
+          
+          // Log the actually executed operation types
+          console.log(`Actually executed operation types: ${executedOperationTypes.join(', ')}`);
+          
+          // Invalidate cache based on operation types that were actually executed
+          if (executedOperationTypes.length > 0) {
+            // Pass all executed operation types as a comma-separated list for selective invalidation
+            this.invalidateWorkbookCache(executedOperationTypes.join(','));
+          } else {
+            // If no operation types were executed, use the detected types as a fallback
+            if (operationTypes.length > 0) {
+              this.invalidateWorkbookCache(operationTypes.join(','));
+            } else {
+              // If no operation types found at all, invalidate normally
+              this.invalidateWorkbookCache();
             }
           }
           

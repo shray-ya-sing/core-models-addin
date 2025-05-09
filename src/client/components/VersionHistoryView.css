@@ -1,0 +1,222 @@
+.version-history-view { 
+  display: flex; 
+  flex-direction: column; 
+  height: 100%; 
+  color: #f0f0f0; 
+  background-color: #1e1e1e; 
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+}
+
+.version-history-header { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 12px 16px; 
+  border-bottom: 1px solid #333; 
+}
+
+.version-history-header h2 { 
+  margin: 0; 
+  font-size: 18px; 
+  font-weight: 500; 
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  color: #f0f0f0;
+}
+
+.version-history-actions {
+  display: flex;
+  padding: 8px 16px;
+  gap: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.save-button, .clear-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.save-button {
+  background-color: #2962ff;
+  color: white;
+}
+
+.clear-button {
+  background-color: transparent;
+  border: 1px solid #666;
+  color: #f0f0f0;
+}
+
+.notification {
+  margin: 8px 16px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.notification.success {
+  background-color: rgba(56, 142, 60, 0.2);
+  border: 1px solid #388e3c;
+  color: #81c784;
+}
+
+.notification.error {
+  background-color: rgba(211, 47, 47, 0.2);
+  border: 1px solid #d32f2f;
+  color: #e57373;
+}
+
+.version-history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100px;
+  color: #999;
+  font-style: italic;
+}
+
+.version-group {
+  margin-bottom: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #252525;
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.version-header:hover {
+  background-color: #333;
+}
+
+.version-header.expanded {
+  background-color: #333;
+  border-bottom: 1px solid #444;
+}
+
+.version-summary {
+  flex: 1;
+}
+
+.version-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.version-meta {
+  font-size: 12px;
+  color: #999;
+}
+
+.version-indicator {
+  color: #999;
+  font-size: 12px;
+}
+
+.version-details {
+  padding: 12px 16px;
+  background-color: #2a2a2a;
+}
+
+.version-changes {
+  margin-bottom: 16px;
+}
+
+.change-item {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background-color: #333;
+}
+
+.change-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.change-description {
+  font-weight: 500;
+}
+
+.change-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-button {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: none;
+  background-color: #2962ff;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.change-value {
+  font-family: monospace;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 2px;
+  margin-top: 4px;
+}
+
+.change-value.removed {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: #ef9a9a;
+}
+
+.change-value.added {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #a5d6a7;
+}
+
+.version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.view-button, .restore-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.view-button {
+  background-color: transparent;
+  border: 1px solid #666;
+  color: #f0f0f0;
+}
+
+.restore-button {
+  background-color: #2962ff;
+  color: white;
+}

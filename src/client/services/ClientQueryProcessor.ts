@@ -154,7 +154,8 @@ export class ClientQueryProcessor {
   async processQuery(
     userQuery: string,
     streamingCB?: (chunk: string) => void,
-    chatHistory: Array<{role: string, content: string}> = []
+    chatHistory: Array<{role: string, content: string, attachments?: any[]}> = [],
+    attachments?: any[]
   ): Promise<QueryProcessorResult> {
     const processId = uuidv4();
     const status = ProcessStatusManager.getInstance();
@@ -179,117 +180,130 @@ export class ClientQueryProcessor {
         assistantMessage: "I couldn't process your request. Please try again with a clearer instruction."
       };
     }
+    
+    // Track results from all steps
+    let lastResult: QueryProcessorResult | null = null;
+    let combinedMessage = "";
+    let command: Command | null = null;
 
-    else {
-      // Process steps sequentially with proper async/await
-      // Use for...of loop instead of forEach for proper async handling
-      for (const step of queryClassification.steps) {
-        const queryType = step.step_type;
-        const query = step.step_specific_query;
-        const stepIndex = step.step_index;
-        
-        // Log that you are completing this step
-        console.log(`%c Completing step ${stepIndex} of type ${queryType} with query: ${query}`, 'color: #2ecc71');
-
-        /* 4. Route execution */
-        switch (queryType) {
-          case QueryType.Greeting:
-            // For greetings, no need to capture workbook state
-            console.log(`%c Processing greeting: "${query}"`, `background: ${this.getClassificationColor(QueryType.Greeting)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-            console.timeEnd('Query processing time');
-            console.groupEnd();
-            return this.handleGreeting(query, streamingCB, processId);
-              
-          case QueryType.WorkbookQuestion:
-          case QueryType.WorkbookQuestionWithKB:
-          case QueryType.WorkbookCommand:
-          case QueryType.WorkbookCommandWithKB:
-
-            // Use our contextBuilder to get chunks via the query-dependent selection
-            const queryContext = await this.queryContextBuilder.buildContextForQuery(
-              this.convertToCommandModelQueryType(queryType as QueryType),
-              chatHistory,
-              query
-            );
-            
-            // Convert the context to JSON format
-            const workbookJSON = this.queryContextBuilder.contextToJson(queryContext);
-            
-            // Route to appropriate handler based on query type
-            if (queryType === QueryType.WorkbookQuestion) {
-              console.log(`%c Processing workbook question: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestion)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-              console.timeEnd('Query processing time');
-              console.groupEnd();
-              return this.answerWorkbookQuestion(
-                query,
-                workbookJSON,
-                streamingCB,
-                processId,
-                chatHistory
-              );
-            } else if (queryType === QueryType.WorkbookQuestionWithKB) {
-              console.log(`%c Processing workbook question with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestionWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-              console.timeEnd('Query processing time');
-              console.groupEnd();
-              return this.answerWorkbookQuestion(
-                query,
-                workbookJSON,
-                streamingCB,
-                processId,
-                chatHistory
-              );
-            } else if (queryType === QueryType.WorkbookCommand) {
-              console.log(`%c Processing workbook command: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommand)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-              console.timeEnd('Query processing time');
-              console.groupEnd();
-              return this.runWorkbookCommand(
-                query,
-                workbookJSON,
-                processId,
-                chatHistory
-              );
-            } else if (queryType === QueryType.WorkbookCommandWithKB) {
-              console.log(`%c Processing workbook command with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommandWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-              console.timeEnd('Query processing time');
-              console.groupEnd();
-              return this.runWorkbookCommand(
-                query,
-                workbookJSON,
-                processId,
-                chatHistory
-              );
-            }
-            else if (queryType === QueryType.Unknown) {
-              console.log(`%c Unable to classify query: "${query}"`, `background: ${this.getClassificationColor(QueryType.Unknown)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-              console.timeEnd('Query processing time');
-              console.groupEnd();
-              return {
-                processId,
-                assistantMessage:
-                  "I'm sorry, I'm not sure how to handle that request yet."
-              };
-            }        
-          default:
-            console.log(`%c Encountered unknown query type: ${queryType}`, 'background: #c0392b; color: #fff; font-size: 12px; padding: 2px 5px;');
-            console.timeEnd('Query processing time');
-            console.groupEnd();
-            return {
-              processId,
-              assistantMessage:
-                "I'm sorry, I'm not sure how to handle that request yet."
-            };
-        }
-      }
+    // Process steps sequentially with proper async/await
+    for (const step of queryClassification.steps) {
+      const queryType = step.step_type;
+      const query = step.step_specific_query;
+      const stepIndex = step.step_index;
       
-      // After processing all steps, return a success result
-      console.log(`%c All steps processed successfully`, 'background: #27ae60; color: #fff; font-size: 12px; padding: 2px 5px;');
-      console.timeEnd('Query processing time');
-      console.groupEnd();
+      // Log that we're completing this step
+      console.log(`%c Completing step ${stepIndex} of type ${queryType} with query: ${query}`, 'color: #2ecc71');
+
+      try {
+        // Handle different query types
+        if (queryType === QueryType.Greeting) {
+          // For greetings, no need to capture workbook state
+          console.log(`%c Processing greeting: "${query}"`, `background: ${this.getClassificationColor(QueryType.Greeting)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+          lastResult = await this.handleGreeting(query, streamingCB, processId, attachments);
+        } 
+        else if (
+          queryType === QueryType.WorkbookQuestion ||
+          queryType === QueryType.WorkbookQuestionWithKB ||
+          queryType === QueryType.WorkbookCommand ||
+          queryType === QueryType.WorkbookCommandWithKB
+        ) {
+          // Use our contextBuilder to get chunks via the query-dependent selection
+          const queryContext = await this.queryContextBuilder.buildContextForQuery(
+            this.convertToCommandModelQueryType(queryType as QueryType),
+            chatHistory,
+            query
+          );
+          
+          // Convert the context to JSON format
+          const workbookJSON = this.queryContextBuilder.contextToJson(queryContext);
+          
+          // Route to appropriate handler based on query type
+          if (queryType === QueryType.WorkbookQuestion) {
+            console.log(`%c Processing workbook question: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestion)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+            lastResult = await this.answerWorkbookQuestion(
+              query,
+              workbookJSON,
+              streamingCB,
+              processId,
+              chatHistory,
+              attachments
+            );
+          } else if (queryType === QueryType.WorkbookQuestionWithKB) {
+            console.log(`%c Processing workbook question with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestionWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+            lastResult = await this.answerWorkbookQuestionWithKB(
+              query,
+              workbookJSON,
+              streamingCB,
+              processId,
+              chatHistory,
+              attachments
+            );
+          } else if (queryType === QueryType.WorkbookCommand) {
+            console.log(`%c Processing workbook command: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommand)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+            lastResult = await this.runWorkbookCommand(
+              query,
+              workbookJSON,
+              processId,
+              chatHistory,
+              attachments
+            );
+          } else if (queryType === QueryType.WorkbookCommandWithKB) {
+            console.log(`%c Processing workbook command with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommandWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+            lastResult = await this.runWorkbookCommand(
+              query,
+              workbookJSON,
+              processId,
+              chatHistory,
+              attachments
+            );
+          }
+        }
+        else if (queryType === QueryType.Unknown) {
+          console.log(`%c Unable to classify query: "${query}"`, `background: ${this.getClassificationColor(QueryType.Unknown)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
+          lastResult = {
+            processId,
+            assistantMessage: "I'm sorry, I'm not sure how to handle that request yet."
+          };
+        }
+
+        // Store the command from the last step that has one
+        if (lastResult && lastResult.command) {
+          command = lastResult.command;
+        }
+
+        // Accumulate messages if there's a result
+        if (lastResult && lastResult.assistantMessage) {
+          if (combinedMessage.length > 0) {
+            combinedMessage += "\n\n";
+          }
+          combinedMessage += lastResult.assistantMessage;
+        }
+      } catch (error) {
+        console.error(`Error processing step ${stepIndex}:`, error);
+        combinedMessage += `\n\nI encountered an error while processing step ${stepIndex}: ${error.message}`;
+      }
+    }
+    
+    // After processing all steps, return a combined result
+    console.log(`%c All steps processed successfully`, 'background: #27ae60; color: #fff; font-size: 12px; padding: 2px 5px;');
+    console.timeEnd('Query processing time');
+    console.groupEnd();
+    
+    // If we didn't get any results, return a default message
+    if (!lastResult || combinedMessage.length === 0) {
       return {
         processId,
-        assistantMessage: "I completed all steps of your request"
+        assistantMessage: "I processed your request but couldn't generate a proper response."
       };
     }
+    
+    // Return the combined result
+    return {
+      processId,
+      assistantMessage: combinedMessage,
+      command: command
+    };
   }
 
   /* --------------------------- Helper Methods --------------------------- */
@@ -345,7 +359,7 @@ export class ClientQueryProcessor {
   private async classifyQueryAndDecompose(
     query: string,
     _pid: string, 
-    chatHistory: Array<{role: string, content: string}> = []
+    chatHistory: Array<{role: string, content: string, attachments?: any[]}> = []
   ): Promise<QueryClassification> {
     try {
       const res = await this.anthropic.classifyQueryAndDecompose(query, chatHistory);
@@ -428,7 +442,8 @@ export class ClientQueryProcessor {
     private async handleGreeting(
       query: string,
       stream: ((c: string) => void) | undefined,
-      pid: string
+      pid: string,
+      attachments?: any[]
     ): Promise<QueryProcessorResult> {
       const sm = ProcessStatusManager.getInstance();
       sm.updateStatus(pid, {
@@ -437,7 +452,7 @@ export class ClientQueryProcessor {
         message: 'Generating greeting…'
       });
   
-      const resp = await this.anthropic.generateChatResponse(query, stream);
+      const response = await this.anthropic.generateChatResponse(query, attachments, stream);
   
       sm.updateStatus(pid, {
         stage: ProcessStage.QueryProcessing,
@@ -445,7 +460,7 @@ export class ClientQueryProcessor {
         message: 'Greeting sent.'
       });
   
-      return { processId: pid, assistantMessage: resp.assistantMessage };
+      return { processId: pid, assistantMessage: response.assistantMessage };
     }
   
   
@@ -454,7 +469,8 @@ export class ClientQueryProcessor {
       workbookJSON: string,
       stream: ((c: string) => void) | undefined,
       pid: string,
-      chatHistory: Array<{role: string, content: string}>
+      chatHistory: Array<{role: string, content: string, attachments?: any[]}>,
+      attachments?: any[]
     ): Promise<QueryProcessorResult> {
       const sm = ProcessStatusManager.getInstance();
       sm.updateStatus(pid, {
@@ -463,11 +479,12 @@ export class ClientQueryProcessor {
         message: 'Answering workbook question…'
       });
   
-      const resp = await this.anthropic.generateWorkbookExplanation(
+      const response = await this.anthropic.generateWorkbookExplanation(
         query,
         workbookJSON,
         stream,
-        chatHistory
+        chatHistory,
+        attachments
       );
   
       sm.updateStatus(pid, {
@@ -478,7 +495,8 @@ export class ClientQueryProcessor {
   
       return {
         processId: pid,
-        assistantMessage: resp.assistantMessage
+        assistantMessage: response.assistantMessage,
+        command: null
       };
     }
   
@@ -487,7 +505,8 @@ export class ClientQueryProcessor {
       workbookJSON: string,
       stream: ((c: string) => void) | undefined,
       pid: string,
-      chatHistory: Array<{role: string, content: string}>
+      chatHistory: Array<{role: string, content: string, attachments?: any[]}>,
+      attachments?: any[]
     ): Promise<QueryProcessorResult> {
       /* 1. Fetch KB */
       const sm = ProcessStatusManager.getInstance();
@@ -514,7 +533,7 @@ export class ClientQueryProcessor {
           kb: kbResults
         });
   
-        return this.answerWorkbookQuestion(query, context, stream, pid, chatHistory);
+        return this.answerWorkbookQuestion(query, context, stream, pid, chatHistory, attachments);
       } catch (error) {
         sm.updateStatus(pid, {
           stage: ProcessStage.KnowledgeBaseQuery,
@@ -534,14 +553,15 @@ export class ClientQueryProcessor {
       query: string,
       workbookJSON: string,
       pid: string,
-      chatHistory: Array<{ role: string; content: string }>
+      chatHistory: Array<{ role: string; content: string; attachments?: any[] }>,
+      attachments?: any[]
     ): Promise<QueryProcessorResult> {
       /* 1. Initialize status tracking */
       const sm = ProcessStatusManager.getInstance();
       sm.updateStatus(pid, {
         stage: ProcessStage.CommandPlanning,
         status: ProcessStatus.Pending,
-        message: 'Planning operations…'
+        message: 'Command plan ready...'
       });
     
       try {
@@ -557,10 +577,11 @@ export class ClientQueryProcessor {
         });
     
         // Generate operations based on the query and workbook context
-        const operationPlan = await operationGenerator.generateOperations(
+        const operationPlan = await operationGenerator.generateOperationsWithMultimodal(
           query,
           workbookJSON,
-          chatHistory
+          chatHistory,
+          attachments
         );
     
         // Create a Command object from the operation plan
@@ -595,7 +616,7 @@ export class ClientQueryProcessor {
         sm.updateStatus(pid, {
           stage: ProcessStage.CommandPlanning,
           status: ProcessStatus.Success,
-          message: 'Command plan ready, preparing to execute...'
+          message: 'Preparing to execute...'
         });
     
         // Add command to the manager and register for status updates
@@ -610,13 +631,13 @@ export class ClientQueryProcessor {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Pending,
-              message: `Executing: ${updatedCommand.description}`,
+              message: `Processing your request...`,
             });
           } else if (updatedCommand.status === CommandStatus.Completed) {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Success,
-              message: 'Command executed successfully',
+              message: 'I completed the operation successfully',
             });
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
@@ -624,7 +645,7 @@ export class ClientQueryProcessor {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Error,
-              message: `Command execution failed: ${updatedCommand.error || 'Unknown error'}`,
+              message: `I failed to complete the operation. Please try again`,
             });
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
@@ -641,9 +662,8 @@ export class ClientQueryProcessor {
           // Error will be handled by the status listener
         });
         
-        // Generate a user-friendly message about what will be done
-        const assistantMessage = `I'll ${operationPlan.description.toLowerCase()}. ` +
-          `This will involve ${operationPlan.operations.length} Excel operations.`;
+        // Generate a simpler user-friendly message without mentioning operation count
+        const assistantMessage = `I'll ${operationPlan.description.toLowerCase()}.`;
         
         return {
           processId: pid,
@@ -656,7 +676,7 @@ export class ClientQueryProcessor {
         sm.updateStatus(pid, {
           stage: ProcessStage.CommandPlanning,
           status: ProcessStatus.Error,
-          message: `Error planning commands: ${error.message}`
+          message: `I failed to complete the operation. Please try again`
         });
         
         return {

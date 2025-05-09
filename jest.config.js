@@ -3,9 +3,9 @@ module.exports = {
   testEnvironment: 'jsdom',
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-    '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$': '<rootDir>/tests/__mocks__/fileMock.js',
-    '^@anthropic-ai/sdk$': '<rootDir>/tests/__mocks__/@anthropic-ai/sdk',
-    '^pdf-parse$': '<rootDir>/tests/__mocks__/pdf-parse',
+    '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$': '<rootDir>/tests/unit/__mocks__/fileMock.js',
+    '^@anthropic-ai/sdk$': '<rootDir>/tests/unit/__mocks__/@anthropic-ai/sdk',
+    '^pdf-parse$': '<rootDir>/tests/unit/__mocks__/pdf-parse',
   },
   setupFilesAfterEnv: ['<rootDir>/tests/setupTests.js', '<rootDir>/tests/setup.js'],
   testPathIgnorePatterns: ['/node_modules/'],

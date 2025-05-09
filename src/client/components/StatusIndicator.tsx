@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { FileIcon, CheckIcon, AlertTriangleIcon } from '../components/icons';
+import { cn } from '../utils/classUtils';
 
 export enum StatusType {
   Pending = 'pending',
@@ -60,49 +62,60 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   // Don't render if not visible
   if (!visible) return null;
 
-  // Define styles based on status
-  const indicatorStyle: React.CSSProperties = {
-    display: 'inline-block',
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-    marginRight: '8px',
-    verticalAlign: 'middle',
-    backgroundColor: 
-      status === StatusType.Pending ? '#f39c12' : // Yellow
-      status === StatusType.Success ? '#2ecc71' : // Green
-      status === StatusType.Error ? '#e74c3c' :   // Red
-      '#95a5a6',                                  // Gray (idle)
-    animation: status === StatusType.Pending ? 'pulse 1.5s infinite' : 'none',
-    transition: 'background-color 0.3s ease-in-out',
+  // Status-dependent classes
+  const getStatusClasses = () => {
+    switch(status) {
+      case StatusType.Pending:
+      case StatusType.Idle:
+        return 'text-white';
+      case StatusType.Success:
+        return 'text-green-400';
+      case StatusType.Error:
+        return 'text-red-400';
+      default:
+        return 'text-gray-400';
+    }
   };
 
-  const containerStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '8px 12px',
-    marginBottom: '8px',
-    fontSize: '12px',
-    color: '#ffffff',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: '4px',
-    opacity: fadeOut ? 0 : 1,
-    transition: 'opacity 0.5s ease-in-out',
+  // Define a traffic light that will be visible for all statuses
+  const getTrafficLight = () => {
+    switch(status) {
+      case StatusType.Pending:
+      case StatusType.Idle:
+        return <div className="w-4 h-4 rounded-full bg-yellow-500 border border-yellow-400 animate-pulse" />;
+      case StatusType.Success:
+        return <div className="w-4 h-4 rounded-full bg-green-500 border border-green-400" />;
+      case StatusType.Error:
+        return <div className="w-4 h-4 rounded-full bg-red-500 border border-red-400" />;
+      default:
+        return <div className="w-4 h-4 rounded-full bg-gray-500 border border-gray-400" />;
+    }
   };
+
+  // For debugging - log the current status
+  console.log('StatusIndicator rendering with status:', status, 'and message:', message);
 
   return (
-    <div style={containerStyle}>
-      <div style={indicatorStyle} />
-      <span>{message}</span>
-      <style>
-        {`
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.4; }
-          100% { opacity: 1; }
-        }
-        `}
-      </style>
+    <div className={cn(
+      'flex items-center gap-3 rounded-md px-3 py-2 shadow-md bg-gray-800/70 border border-gray-700',
+      fadeOut ? 'opacity-0' : 'opacity-100',
+      'transition-opacity duration-500 ease-in-out'
+    )}>
+      <div className="flex items-center gap-3">
+        {/* Debug traffic light - always grey regardless of status */}
+        <div className="w-4 h-4 rounded-full bg-gray-400 border border-gray-300" />
+        
+        {/* Actual traffic light based on status */}
+        {getTrafficLight()}
+        
+        {/* White text with smaller font size */}
+        <span className="text-white" style={{ 
+          fontSize: 'clamp(10px, 1.25vw, 12px)', 
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+        }}>
+          {message} [Status: {status}]
+        </span>
+      </div>
     </div>
   );
 };

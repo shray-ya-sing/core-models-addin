@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel Add-in Test Dashboard</title>
+  <meta http-equiv="refresh" content="5">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background-color: #1a1a1a;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .header {
+      margin-bottom: 20px;
+    }
+    
+    .results-controls {
+      display: flex;
+      align-items: center;
+      margin: 15px 0;
+      gap: 10px;
+    }
+    
+    .control-button {
+      background-color: #2d3748;
+      color: #e2e8f0;
+      border: 1px solid #4a5568;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-right: 5px;
+      margin-bottom: 5px;
+    }
+    
+    .control-button.primary {
+      background-color: #3182ce;
+      border-color: #2b6cb0;
+      font-weight: bold;
+    }
+    
+    .control-button:hover {
+      background-color: #4a5568;
+    }
+    
+    .results-select {
+      background-color: #2d3748;
+      color: #e2e8f0;
+      border: none;
+      padding: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      min-width: 250px;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-weight: normal;
+      font-size: clamp(1.25rem, 1.5vw, 1.5rem);
+      color: #aaa;
+    }
+    
+    .test-summary, .test-details, .key-metrics, .test-log {
+      background-color: #222;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    
+    .log-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .log-button {
+      background-color: #2d3748;
+      color: #e2e8f0;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    
+    .log-button:hover {
+      background-color: #4a5568;
+    }
+    
+    .log-entry {
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 4px;
+      background-color: #2a2a2a;
+    }
+    
+    .log-entry.success {
+      border-left: 3px solid #68d391;
+    }
+    
+    .log-entry.failure {
+      border-left: 3px solid #fc8181;
+    }
+    
+    .log-entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    
+    .log-entry-content {
+      margin-top: 8px;
+      padding: 8px;
+      background-color: #333;
+      border-radius: 4px;
+      display: none;
+    }
+    
+    .log-entry.expanded .log-entry-content {
+      display: block;
+    }
+    
+    .cell-verification {
+      margin-top: 5px;
+      font-family: monospace;
+    }
+    
+    .cell-verification-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    
+    .cell-verification-table th,
+    .cell-verification-table td {
+      padding: 5px;
+      text-align: left;
+      border-bottom: 1px solid #444;
+    }
+    
+    .metric-card {
+      background-color: #2d3748;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    
+    .metric-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    
+    .metric-query {
+      font-size: 0.9rem;
+      color: #718096;
+      font-style: italic;
+      margin-top: 5px;
+    }
+    
+    .success-card {
+      border-left: 4px solid #68d391;
+    }
+    
+    .failure-card {
+      border-left: 4px solid #fc8181;
+    }
+    
+    .failure-list {
+      margin-top: 10px;
+    }
+    
+    .failure-item {
+      background-color: #3a3a3a;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .failure-step {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .failure-message {
+      color: #fc8181;
+      margin-bottom: 5px;
+    }
+    
+    .failure-details {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #2a2a2a;
+      border-radius: 4px;
+    }
+    
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 15px;
+      border-radius: 4px;
+      color: white;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 1;
+      transition: opacity 0.5s ease;
+    }
+    
+    .notification.success {
+      background-color: #38a169;
+    }
+    
+    .notification.info {
+      background-color: #3182ce;
+    }
+    
+    .notification.error {
+      background-color: #e53e3e;
+    }
+    
+    .notification.fade-out {
+      opacity: 0;
+    }
+    
+    .step {
+      margin-bottom: 10px;
+      padding: 10px;
+      background-color: #2d3748;
+      border-radius: 4px;
+    }
+    
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    
+    .step-details {
+      margin-top: 10px;
+      font-size: clamp(0.75rem, 0.9vw, 0.875rem);
+    }
+    
+    .success {
+      color: #68d391;
+    }
+    
+    .failure {
+      color: #fc8181;
+    }
+    
+    .timestamp {
+      color: #718096;
+      font-size: clamp(0.75rem, 0.9vw, 0.875rem);
+    }
+    
+    .no-data {
+      text-align: center;
+      padding: 30px;
+      color: #718096;
+    }
+    
+    .results-panels {
+      margin-top: 20px;
+    }
+    
+    .result-panel {
+      margin-bottom: 15px;
+      border-radius: 4px;
+      overflow: hidden;
+      background-color: #2d3748;
+    }
+    
+    .panel-header {
+      padding: 12px 15px;
+      background-color: #3d4a5c;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .panel-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+    
+    .panel-header .timestamp {
+      font-size: 0.8rem;
+      color: #a0aec0;
+    }
+    
+    .panel-content {
+      padding: 0;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    
+    .panel-content.expanded {
+      max-height: 10000px;
+      padding: 15px;
+      transition: max-height 0.5s ease-in;
+    }
+    
+    .panel-summary {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #4a5568;
+    }
+    
+    .summary-item {
+      text-align: center;
+    }
+    
+    .summary-item .label {
+      font-size: 0.8rem;
+      color: #a0aec0;
+      margin-bottom: 5px;
+    }
+    
+    .summary-item .value {
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+    
+    .summary-item .value.passed {
+      color: #48bb78;
+    }
+    
+    .summary-item .value.failed {
+      color: #f56565;
+    }
+    
+    .summary-item .value.skipped {
+      color: #ecc94b;
+    }
+    
+    .summary-section {
+      margin-bottom: 15px;
+    }
+    
+    .summary-section h4 {
+      margin: 0 0 10px 0;
+      font-size: 0.9rem;
+      color: #a0aec0;
+    }
+    
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    /* Scenario styles */
+    .scenarios-list {
+      margin-top: 15px;
+    }
+    
+    .scenario-entry {
+      margin-bottom: 10px;
+      border-radius: 4px;
+      overflow: hidden;
+      background-color: #2d3748;
+    }
+    
+    .scenario-header {
+      padding: 10px 15px;
+      background-color: #3d4a5c;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .scenario-status {
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: bold;
+      width: 60px;
+      text-align: center;
+    }
+    
+    .scenario-status.passed {
+      background-color: #2f855a;
+      color: #f0fff4;
+    }
+    
+    .scenario-status.failed {
+      background-color: #c53030;
+      color: #fff5f5;
+    }
+    
+    .scenario-title {
+      flex-grow: 1;
+      margin: 0 10px;
+    }
+    
+    .scenario-duration {
+      color: #a0aec0;
+      font-size: 0.8rem;
+    }
+    
+    .scenario-toggle {
+      margin-left: 10px;
+      color: #a0aec0;
+      transition: transform 0.3s;
+    }
+    
+    .scenario-details {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+      padding: 0 15px;
+    }
+    
+    .scenario-details.expanded {
+      max-height: 10000px;
+      padding: 15px;
+      transition: max-height 0.5s ease-in;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    
+    th, td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid #333;
+    }
+    
+    th {
+      color: #718096;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Excel Add-in Test Dashboard</h1>
+      <div class="results-controls">
+        <button class="control-button primary" onclick="runAllTests()">Run All Tests</button>
+        <button class="control-button" onclick="loadAllResults()">Refresh Results</button>
+        <button class="control-button" onclick="expandAllPanels()">Expand All Panels</button>
+        <button class="control-button" onclick="collapseAllPanels()">Collapse All Panels</button>
+        <button class="control-button" onclick="expandAllEntries()">Expand All Entries</button>
+        <button class="control-button" onclick="collapseAllEntries()">Collapse All Entries</button>
+        <button class="control-button" onclick="showFailuresOnly()">Show Failures Only</button>
+      </div>
+      <div id="notification-area" class="notification-area"></div>
+    </div>
+    <div id="results-panels" class="results-panels"></div>
+    
+    <div class="key-metrics">
+      <h2>Key Metrics</h2>
+      <div id="keyMetrics" class="no-data">No test data available</div>
+    </div>
+    
+    <div class="test-details">
+      <h2>Test Details</h2>
+      <div id="testDetails" class="no-data">No test details available</div>
+    </div>
+    
+    <div class="test-log">
+      <h2>Test Log</h2>
+      <div class="log-controls">
+        <button id="expandAllBtn" class="log-button">Expand All</button>
+        <button id="collapseAllBtn" class="log-button">Collapse All</button>
+        <button id="showFailuresBtn" class="log-button">Show Failures Only</button>
+      </div>
+      <div id="testLog" class="no-data">No test log available</div>
+    </div>
+  </div>
+  
+  <script>
+    // Initialize test results
+    let testResults = {};
+    let resultFiles = [];
+    
+    // Function to load all test results and display them in panels
+    async function loadAllResults() {
+      try {
+        // Show loading notification
+        showNotification('Loading test results...', 'info');
+        
+        // Get the list of result files
+        const files = await getResultFiles();
+        resultFiles = files;
+        
+        if (files.length === 0) {
+          showNotification('No test result files found', 'warning');
+          document.getElementById('results-panels').innerHTML = '<div class="no-data">No test result files found in the results directory</div>';
+          return;
+        }
+        
+        // Clear the results panels container
+        const resultsContainer = document.getElementById('results-panels');
+        resultsContainer.innerHTML = '';
+        
+        // Load each file and create a panel for it
+        let loadedCount = 0;
+        const sortedFiles = [...files].sort().reverse(); // Most recent first
+        
+        for (const filename of sortedFiles) {
+          try {
+            // Fetch the file content
+            const resultData = await fetchResultFile(filename);
+            testResults[filename] = resultData;
+            
+            // Create a panel for this result file
+            const panel = createResultPanel(filename, resultData);
+            resultsContainer.appendChild(panel);
+            
+            loadedCount++;
+          } catch (fileError) {
+            console.error(`Error loading file ${filename}:`, fileError);
+            // Create an error panel
+            const errorPanel = document.createElement('div');
+            errorPanel.className = 'result-panel';
+            errorPanel.innerHTML = `
+              <div class="panel-header" onclick="togglePanel(this.parentElement)">
+                <h3>${filename}</h3>
+                <span class="timestamp">Error loading file</span>
+              </div>
+              <div class="panel-content">
+                <div class="error-message">${fileError.message}</div>
+              </div>
+            `;
+            resultsContainer.appendChild(errorPanel);
+          }
+        }
+        
+        showNotification(`Loaded ${loadedCount} test result files`, 'success');
+        
+        // Expand the first panel by default
+        if (loadedCount > 0) {
+          const firstPanel = resultsContainer.querySelector('.result-panel');
+          if (firstPanel) {
+            togglePanel(firstPanel);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading results:', error);
+        showNotification(`Error loading results: ${error.message}`, 'error');
+      }
+    }
+    
+    // Function to create a result panel for a test result file
+    function createResultPanel(filename, resultData) {
+      const panel = document.createElement('div');
+      panel.className = 'result-panel';
+      panel.dataset.filename = filename;
+      
+      // Check if this is an aggregated result
+      const isAggregated = resultData.results && resultData.summary;
+      
+      // Extract timestamp from filename (assuming format like test-results-2023-01-01T12-00-00.json)
+      let timestamp = 'Unknown';
+      const match = filename.match(/-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/i);
+      if (match) {
+        timestamp = match[1].replace(/-/g, ':').replace('T', ' ');
+      }
+      
+      // Calculate or extract summary statistics
+      let totalSteps, passedSteps, failedSteps, skippedSteps, totalScenarios, passedScenarios, failedScenarios;
+      
+      if (isAggregated) {
+        // Extract summary from aggregated results
+        const summary = resultData.summary;
+        totalSteps = summary.totalSteps;
+        passedSteps = summary.passedSteps;
+        failedSteps = summary.failedSteps;
+        skippedSteps = totalSteps - passedSteps - failedSteps;
+        totalScenarios = summary.totalScenarios;
+        passedScenarios = summary.passedScenarios;
+        failedScenarios = summary.failedScenarios;
+      } else {
+        // Calculate from individual test result
+        totalSteps = resultData.steps ? resultData.steps.length : 0;
+        passedSteps = resultData.steps ? resultData.steps.filter(step => step.success).length : 0;
+        failedSteps = resultData.steps ? resultData.steps.filter(step => !step.success).length : 0;
+        skippedSteps = totalSteps - passedSteps - failedSteps;
+        totalScenarios = 1;
+        passedScenarios = resultData.success ? 1 : 0;
+        failedScenarios = resultData.success ? 0 : 1;
+      }
+      
+      // Create the panel header
+      const header = document.createElement('div');
+      header.className = 'panel-header';
+      header.onclick = () => togglePanel(panel);
+      
+      if (isAggregatedResult) {
+        header.innerHTML = `
+          <h3>Aggregated Test Results (${totalScenarios} scenarios)</h3>
+          <span class="timestamp">${timestamp}</span>
+        `;
+      } else {
+        header.innerHTML = `
+          <h3>${resultData.name || filename}</h3>
+          <span class="timestamp">${timestamp}</span>
+        `;
+      }
+      
+      // Create the panel content
+      const content = document.createElement('div');
+      content.className = 'panel-content';
+      
+      // Add summary section
+      const summary = document.createElement('div');
+      summary.className = 'panel-summary';
+      
+      if (isAggregatedResult) {
+        // For aggregated results, show scenario and step statistics
+        summary.innerHTML = `
+          <div class="summary-section">
+            <h4>Scenarios</h4>
+            <div class="summary-row">
+              <div class="summary-item">
+                <div class="label">Total</div>
+                <div class="value">${totalScenarios}</div>
+              </div>
+              <div class="summary-item">
+                <div class="label">Passed</div>
+                <div class="value passed">${passedScenarios}</div>
+              </div>
+              <div class="summary-item">
+                <div class="label">Failed</div>
+                <div class="value failed">${failedScenarios}</div>
+              </div>
+            </div>
+          </div>
+          <div class="summary-section">
+            <h4>Steps</h4>
+            <div class="summary-row">
+              <div class="summary-item">
+                <div class="label">Total</div>
+                <div class="value">${totalSteps}</div>
+              </div>
+              <div class="summary-item">
+                <div class="label">Passed</div>
+                <div class="value passed">${passedSteps}</div>
+              </div>
+              <div class="summary-item">
+                <div class="label">Failed</div>
+                <div class="value failed">${failedSteps}</div>
+              </div>
+              <div class="summary-item">
+                <div class="label">Skipped</div>
+                <div class="value skipped">${skippedSteps}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // For individual test results, show just step statistics
+        summary.innerHTML = `
+          <div class="summary-item">
+            <div class="label">Total Steps</div>
+            <div class="value">${totalSteps}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Passed</div>
+            <div class="value passed">${passedSteps}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Failed</div>
+            <div class="value failed">${failedSteps}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Skipped</div>
+            <div class="value skipped">${skippedSteps}</div>
+          </div>
+        `;
+      }
+      
+      // Add test details
+      const details = document.createElement('div');
+      details.className = 'test-details';
+      
+      if (isAggregatedResult) {
+        // For aggregated results, show each test scenario
+        let detailsHTML = '<h3>Test Scenarios</h3><div class="scenarios-list">';
+        
+        resultData.results.forEach((result, index) => {
+          const statusClass = result.success ? 'passed' : 'failed';
+          const duration = result.duration ? (result.duration / 1000).toFixed(2) + 's' : 'N/A';
+          
+          detailsHTML += `
+            <div class="scenario-entry ${statusClass}">
+              <div class="scenario-header" onclick="toggleScenario(this)">
+                <div class="scenario-status ${statusClass}">${result.success ? 'PASSED' : 'FAILED'}</div>
+                <div class="scenario-title">${result.name || `Scenario ${index + 1}`}</div>
+                <div class="scenario-duration">${duration}</div>
+                <div class="scenario-toggle">▼</div>
+              </div>
+              <div class="scenario-details">
+                ${updateDashboardHTML(result)}
+              </div>
+            </div>
+          `;
+        });
+        
+        detailsHTML += '</div>';
+        details.innerHTML = detailsHTML;
+      } else {
+        // For individual test results, show the steps
+        details.innerHTML = updateDashboardHTML(resultData);
+      }
+      
+      // Assemble the panel
+      content.appendChild(summary);
+      content.appendChild(details);
+      panel.appendChild(header);
+      panel.appendChild(content);
+      
+      // Update summary with test data
+      updateSummary(resultData, isAggregatedResult);
+      updateKeyMetrics(resultData, isAggregatedResult);
+      
+      return panel;
+    }
+    
+    // Update summary statistics
+    function updateSummary(resultData, isAggregated = false) {
+      if (resultData) {
+        const summaryContent = document.getElementById('summaryContent');
+        if (!summaryContent) return;
+        
+        if (isAggregated && resultData.results) {
+          // Aggregated results summary
+          const totalScenarios = resultData.results.length;
+          const passedScenarios = resultData.results.filter(result => result.success).length;
+          const failedScenarios = totalScenarios - passedScenarios;
+          const scenarioSuccessRate = totalScenarios > 0 ? Math.round((passedScenarios / totalScenarios) * 100) : 0;
+          
+          // Calculate total steps across all scenarios
+          let totalSteps = 0;
+          let passedSteps = 0;
+          let failedSteps = 0;
+          let skippedSteps = 0;
+          
+          resultData.results.forEach(result => {
+            if (result.steps) {
+              totalSteps += result.steps.length;
+              passedSteps += result.steps.filter(step => step.status === 'passed').length;
+              failedSteps += result.steps.filter(step => step.status === 'failed').length;
+              skippedSteps += result.steps.filter(step => step.status === 'skipped').length;
+            }
+          });
+          
+          const stepSuccessRate = totalSteps > 0 ? Math.round((passedSteps / totalSteps) * 100) : 0;
+          
+          summaryContent.innerHTML = `
+            <div class="summary-section">
+              <h4>Scenarios</h4>
+              <div class="summary-row">
+                <div class="summary-item">
+                  <span class="label">Total Scenarios:</span>
+                  <span class="value">${totalScenarios}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Passed:</span>
+                  <span class="value passed">${passedScenarios}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Failed:</span>
+                  <span class="value failed">${failedScenarios}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Success Rate:</span>
+                  <span class="value ${scenarioSuccessRate === 100 ? 'passed' : scenarioSuccessRate > 50 ? 'skipped' : 'failed'}">${scenarioSuccessRate}%</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="summary-section">
+              <h4>Steps</h4>
+              <div class="summary-row">
+                <div class="summary-item">
+                  <span class="label">Total Steps:</span>
+                  <span class="value">${totalSteps}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Passed:</span>
+                  <span class="value passed">${passedSteps}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Failed:</span>
+                  <span class="value failed">${failedSteps}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Skipped:</span>
+                  <span class="value skipped">${skippedSteps}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Success Rate:</span>
+                  <span class="value ${stepSuccessRate === 100 ? 'passed' : stepSuccessRate > 50 ? 'skipped' : 'failed'}">${stepSuccessRate}%</span>
+                </div>
+              </div>
+            </div>
+          `;
+        } else if (resultData.steps) {
+          // Individual test result summary
+          const totalSteps = resultData.steps.length;
+          const passedSteps = resultData.steps.filter(step => step.status === 'passed').length;
+          const failedSteps = resultData.steps.filter(step => step.status === 'failed').length;
+          const skippedSteps = resultData.steps.filter(step => step.status === 'skipped').length;
+          const successRate = totalSteps > 0 ? Math.round((passedSteps / totalSteps) * 100) : 0;
+          
+          summaryContent.innerHTML = `
+            <div class="summary-item">
+              <span class="label">Total Steps:</span>
+              <span class="value">${totalSteps}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Passed:</span>
+              <span class="value passed">${passedSteps}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Failed:</span>
+              <span class="value failed">${failedSteps}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Skipped:</span>
+              <span class="value skipped">${skippedSteps}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Success Rate:</span>
+              <span class="value ${successRate === 100 ? 'passed' : successRate > 50 ? 'skipped' : 'failed'}">${successRate}%</span>
+            </div>
+          `;
+        }
+      }
+    }
+    
+    // Toggle panel expansion
+    function togglePanel(panel) {
+      const content = panel.querySelector('.panel-content');
+      content.classList.toggle('expanded');
+    }
+    
+    // Expand all panels
+    function expandAllPanels() {
+      const panels = document.querySelectorAll('.panel-content');
+      panels.forEach(panel => panel.classList.add('expanded'));
+    }
+    
+    // Collapse all panels
+    function collapseAllPanels() {
+      const panels = document.querySelectorAll('.panel-content');
+      panels.forEach(panel => panel.classList.remove('expanded'));
+    }
+    
+    // Fetch a result file from the server
+    async function fetchResultFile(filename) {
+      const response = await fetch(`http://localhost:3001/api/result-file/${filename}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load file: ${response.status} ${response.statusText}`);
+      }
+      return await response.json();
+    }
+    
+    // Function to get the list of result files
+    async function getResultFiles() {
+      try {
+        // Fetch the list of result files from the server
+        const response = await fetch('http://localhost:3001/api/result-files');
+        if (!response.ok) {
+          throw new Error(`Server returned status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.files || [];
+      } catch (error) {
+        console.error('Error getting result files:', error);
+        
+        // Fallback to localStorage if server request fails
+        const lastFile = localStorage.getItem('lastTestResultFile');
+        return lastFile ? [lastFile] : [];
+      }
+    }
+    
+    // Function to load a specific result file
+    async function loadResultFile(filename) {
+      if (!filename) return;
+      
+      try {
+        // First try to fetch from the server
+        try {
+          const response = await fetch(`/api/result-file/${filename}`);
+          if (!response.ok) {
+            throw new Error(`Server returned status: ${response.status}`);
+          }
+          
+          const resultData = await response.json();
+          updateDashboard(resultData);
+          return;
+        } catch (serverError) {
+          console.error('Error loading file from server:', serverError);
+          // Fall back to localStorage
+        }
+        
+        // Try localStorage as fallback
+        if (filename === localStorage.getItem('lastTestResultFile')) {
+          const storedData = localStorage.getItem('excelTestResults');
+          if (storedData) {
+            const resultData = JSON.parse(storedData);
+            updateDashboard(resultData);
+            return;
+          }
+        }
+        
+        // If we get here, we couldn't load the file
+        throw new Error(`File not found: ${filename}`);
+      } catch (error) {
+        console.error(`Error loading file ${filename}:`, error);
+        showNotification(`Error loading file: ${error.message}`, 'error');
+      }
+    }
+    
+    // Function to show a notification
+    function showNotification(message, type = 'info') {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}`;
+      notification.textContent = message;
+      document.body.appendChild(notification);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+          document.body.removeChild(notification);
+        }, 500);
+      }, 3000);
+    }
+    
+    // Generate dashboard HTML from test results
+    function updateDashboardHTML(results) {
+      if (!results || !results.steps || results.steps.length === 0) {
+        return '<div class="no-data">No test data available</div>';
+      }
+      
+      // Create summary HTML
+      const summaryHtml = `
+        <div class="test-summary">
+          <h2>Test Summary</h2>
+          <p><strong>Scenario:</strong> ${results.name || 'Unnamed Test'}</p>
+          <p><strong>Status:</strong> <span class="${results.success ? 'success' : 'failure'}">
+            ${results.success ? 'PASSED' : 'FAILED'}
+          </span></p>
+          <p><strong>Duration:</strong> ${results.duration}ms</p>
+          <p><strong>Steps:</strong> ${results.steps.length} total, 
+            ${results.steps.filter(s => s.success).length} passed, 
+            ${results.steps.filter(s => !s.success).length} failed</p>
+        </div>
+      `;
+      
+      // Create steps HTML
+      let stepsHtml = '<div class="test-steps"><h2>Test Steps</h2><div class="steps-list">';
+      
+      results.steps.forEach((step, index) => {
+        const statusClass = step.success ? 'passed' : 'failed';
+        const duration = step.duration ? `${step.duration}ms` : 'N/A';
+        
+        stepsHtml += `
+          <div class="log-entry ${statusClass}" data-status="${statusClass}">
+            <div class="log-header" onclick="toggleLogEntry(this)">
+              <div class="log-status ${statusClass}">${step.success ? 'PASSED' : 'FAILED'}</div>
+              <div class="log-title">${step.name || `Step ${index + 1}`}</div>
+              <div class="log-duration">${duration}</div>
+              <div class="log-toggle">▼</div>
+            </div>
+            <div class="log-details">
+              ${renderStepDetails(step)}
+            </div>
+          </div>
+        `;
+      });
+      
+      stepsHtml += '</div></div>';
+      
+      // Combine all sections
+      return summaryHtml + stepsHtml;
+    }
+    
+    // Update the dashboard with test results
+    function updateDashboard(results, isAggregated = false) {
+      if (!results) return;
+      
+      // Store the results
+      testResults = results;
+      
+      // Create a panel for this result
+      const panel = createResultPanel(isAggregated ? 'aggregated-results.json' : 'current-run.json', results, isAggregated);
+      
+      // Clear and add to the results panels container
+      const resultsContainer = document.getElementById('resultsContainer');
+      if (!resultsContainer) {
+        console.error('Results container not found');
+        return;
+      }
+      
+      resultsContainer.innerHTML = '';
+      resultsContainer.appendChild(panel);
+      
+      // Expand the panel
+      togglePanel(panel);
+      
+      showNotification('Test results updated', 'success');
+      
+      // Extract query information from the first step
+      const firstStep = testResults.steps[0];
+        const queryType = firstStep.details && firstStep.details.queryTypeMatch ? 
+          firstStep.details.queryTypeMatch.actual : 'Unknown';
+        
+        // Build key metrics HTML
+        let keyMetricsHtml = `
+          <div class="metric-card">
+            <h3>Query Type</h3>
+            <div class="metric-value">${queryType}</div>
+            <div class="metric-query">${firstStep.query}</div>
+          </div>
+          
+          <div class="metric-card">
+            <h3>Execution Speed</h3>
+            <div class="metric-value">${testResults.duration} ms</div>
+          </div>
+          
+          <div class="metric-card ${testResults.success ? 'success-card' : 'failure-card'}">
+            <h3>Test Result</h3>
+            <div class="metric-value">${testResults.success ? 'PASSED' : 'FAILED'}</div>
+          </div>
+        `;
+        
+        // If test failed, add failure points
+        if (!testResults.success) {
+          const failedSteps = testResults.steps.filter(s => !s.success);
+          keyMetricsHtml += `
+            <div class="metric-card failure-card">
+              <h3>Failure Points</h3>
+              <div class="failure-list">
+          `;
+          
+          failedSteps.forEach(step => {
+            keyMetricsHtml += `<div class="failure-item">
+              <div class="failure-step">${step.stepId}</div>
+              <div class="failure-message">${step.message || 'Verification failed'}</div>
+            </div>`;
+            
+            // Add details about cell verification failures if available
+            if (step.details && step.details.cellValueMatches) {
+              const failedMatches = step.details.cellValueMatches.filter(m => !m.match);
+              if (failedMatches.length > 0) {
+                keyMetricsHtml += `<div class="failure-details">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cell</th>
+                        <th>Expected</th>
+                        <th>Actual</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                `;
+                
+                failedMatches.forEach(match => {
+                  keyMetricsHtml += `
+                    <tr>
+                      <td>${match.address}</td>
+                      <td>${match.expected}</td>
+                      <td>${match.actual}</td>
+                    </tr>
+                  `;
+                });
+                
+                keyMetricsHtml += `
+                    </tbody>
+                  </table>
+                </div>`;
+              }
+            }
+          });
+          
+          keyMetricsHtml += `
+              </div>
+            </div>
+          `;
+        }
+        
+        keyMetrics.innerHTML = keyMetricsHtml;
+      } else {
+        const summaryContent = document.getElementById('summaryContent');
+        if (summaryContent) {
+          summaryContent.classList.add('no-data');
+          summaryContent.textContent = 'No test data available';
+        }
+        
+        const keyMetrics = document.getElementById('keyMetrics');
+        keyMetrics.classList.add('no-data');
+        keyMetrics.textContent = 'No test data available';
+      }
+      
+      // Update details
+      const testDetails = document.getElementById('testDetails');
+      if (testResults && testResults.steps.length > 0) {
+        testDetails.classList.remove('no-data');
+        
+        let detailsHTML = '';
+        testResults.steps.forEach(step => {
+          detailsHTML += `
+            <div class="step">
+              <div class="step-header">
+                <span><strong>${step.stepId}</strong>: ${step.query}</span>
+                <span class="${step.success ? 'success' : 'failure'}">
+                  ${step.success ? '✓ PASSED' : '✗ FAILED'}
+                </span>
+              </div>
+              ${step.message ? `<div class="step-message ${step.success ? 'success' : 'failure'}">${step.message}</div>` : ''}
+              ${renderStepDetails(step)}
+            </div>
+          `;
+        });
+        
+        testDetails.innerHTML = detailsHTML;
+      } else {
+        testDetails.classList.add('no-data');
+        testDetails.textContent = 'No test details available';
+      }
+      
+      // Update test log
+      const testLog = document.getElementById('testLog');
+      if (testResults && testResults.steps.length > 0) {
+        testLog.classList.remove('no-data');
+        
+        // Generate log entries for each step
+        let logHTML = '';
+        
+        // First, add an entry for the overall test
+        logHTML += `
+          <div class="log-entry ${testResults.success ? 'success' : 'failure'}">
+            <div class="log-entry-header" onclick="toggleLogEntry(this)">
+              <span><strong>Test Run:</strong> ${testResults.name}</span>
+              <span class="${testResults.success ? 'success' : 'failure'}">
+                ${testResults.success ? '✓ PASSED' : '✗ FAILED'} (${testResults.duration}ms)
+              </span>
+            </div>
+            <div class="log-entry-content">
+              <p>Started: ${new Date(testResults.startTime).toLocaleString()}</p>
+              <p>Ended: ${new Date(testResults.endTime).toLocaleString()}</p>
+              <p>Duration: ${testResults.duration}ms</p>
+              <p>Steps: ${testResults.steps.length} total, 
+                ${testResults.steps.filter(s => s.success).length} passed, 
+                ${testResults.steps.filter(s => !s.success).length} failed</p>
+            </div>
+          </div>
+        `;
+        
+        // Then add entries for each step
+        testResults.steps.forEach(step => {
+          logHTML += `
+            <div class="log-entry ${step.success ? 'success' : 'failure'}">
+              <div class="log-entry-header" onclick="toggleLogEntry(this)">
+                <span><strong>${step.stepId}</strong>: ${step.query}</span>
+                <span class="${step.success ? 'success' : 'failure'}">
+                  ${step.success ? '✓ PASSED' : '✗ FAILED'}
+                </span>
+              </div>
+              <div class="log-entry-content">
+                ${step.message ? `<p class="${step.success ? 'success' : 'failure'}"><strong>Message:</strong> ${step.message}</p>` : ''}
+                ${renderCellVerifications(step)}
+              </div>
+            </div>
+          `;
+        });
+        
+        testLog.innerHTML = logHTML;
+        
+        // Set up event listeners for log controls
+        document.getElementById('expandAllBtn').addEventListener('click', expandAllLogEntries);
+        document.getElementById('collapseAllBtn').addEventListener('click', collapseAllLogEntries);
+        document.getElementById('showFailuresBtn').addEventListener('click', showFailuresOnly);
+      } else if (testLog) {
+        testLog.classList.add('no-data');
+        testLog.textContent = 'No test log available';
+      }
+    }
+    
+    // Function to render cell verifications
+    function renderCellVerifications(step) {
+      if (!step.details || !step.details.cellValueMatches || step.details.cellValueMatches.length === 0) {
+        return '<p>No cell verification data available</p>';
+      }
+      
+      const cellMatches = step.details.cellValueMatches;
+      const failedMatches = cellMatches.filter(m => !m.match);
+      
+      let html = `
+        <div class="cell-verification">
+          <h4>Cell Verification Results (${cellMatches.length} cells checked, ${failedMatches.length} failed)</h4>
+          <table class="cell-verification-table">
+            <thead>
+              <tr>
+                <th>Cell</th>
+                <th>Expected</th>
+                <th>Actual</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      // Sort to show failures first
+      const sortedMatches = [...cellMatches].sort((a, b) => {
+        if (a.match === b.match) return 0;
+        return a.match ? 1 : -1; // Failures first
+      });
+      
+      sortedMatches.forEach(match => {
+        html += `
+          <tr class="${match.match ? 'success' : 'failure'}">
+            <td>${match.address}</td>
+            <td>${typeof match.expected === 'number' ? match.expected : JSON.stringify(match.expected)}</td>
+            <td>${typeof match.actual === 'number' ? match.actual : JSON.stringify(match.actual)}</td>
+            <td class="${match.match ? 'success' : 'failure'}">${match.match ? '✓' : '✗'}</td>
+          </tr>
+        `;
+      });
+      
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+      
+      return html;
+    }
+    
+    // Toggle log entry expansion
+    function toggleLogEntry(header) {
+      const details = header.nextElementSibling;
+      details.classList.toggle('expanded');
+      const toggle = header.querySelector('.log-toggle');
+      toggle.style.transform = details.classList.contains('expanded') ? 'rotate(180deg)' : '';
+    }
+    
+    // Toggle scenario expansion
+    function toggleScenario(header) {
+      const details = header.nextElementSibling;
+      details.classList.toggle('expanded');
+      const toggle = header.querySelector('.scenario-toggle');
+      toggle.style.transform = details.classList.contains('expanded') ? 'rotate(180deg)' : '';
+    }
+    
+    // Expand all entries (log entries and scenarios)
+    function expandAllEntries() {
+      // Expand log entries
+      document.querySelectorAll('.log-details').forEach(details => {
+        details.classList.add('expanded');
+        const toggle = details.previousElementSibling.querySelector('.log-toggle');
+        if (toggle) toggle.style.transform = 'rotate(180deg)';
+      });
+      
+      // Expand scenario entries
+      document.querySelectorAll('.scenario-details').forEach(details => {
+        details.classList.add('expanded');
+        const toggle = details.previousElementSibling.querySelector('.scenario-toggle');
+        if (toggle) toggle.style.transform = 'rotate(180deg)';
+      });
+    }
+    
+    // Collapse all entries (log entries and scenarios)
+    function collapseAllEntries() {
+      // Collapse log entries
+      document.querySelectorAll('.log-details').forEach(details => {
+        details.classList.remove('expanded');
+        const toggle = details.previousElementSibling.querySelector('.log-toggle');
+        if (toggle) toggle.style.transform = '';
+      });
+      
+      // Collapse scenario entries
+      document.querySelectorAll('.scenario-details').forEach(details => {
+        details.classList.remove('expanded');
+        const toggle = details.previousElementSibling.querySelector('.scenario-toggle');
+        if (toggle) toggle.style.transform = '';
+      });
+    }
+    
+    // Legacy functions for backward compatibility
+    function expandAllLogEntries() {
+      expandAllEntries();
+    }
+    
+    function collapseAllLogEntries() {
+      collapseAllEntries();
+    }
+    
+    // Run all test scenarios
+    async function runAllTests() {
+      try {
+        showNotification('Running all test scenarios...', 'info');
+        
+        // Call the API endpoint to run all tests
+        const response = await fetch('/api/runAllTests', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showNotification('All tests completed successfully!', 'success');
+          // Load the aggregated results
+          loadAggregatedResults();
+        } else {
+          showNotification(`Error running tests: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        console.error('Error running tests:', error);
+        showNotification(`Error running tests: ${error.message}`, 'error');
+      }
+    }
+    
+    // Show only failed entries
+    function showFailuresOnly() {
+      // Show only failed log entries
+      document.querySelectorAll('.log-entry').forEach(entry => {
+        if (entry.classList.contains('failed') || entry.dataset.status === 'failed') {
+          entry.style.display = 'block';
+          const details = entry.querySelector('.log-details');
+          if (details) details.classList.add('expanded');
+        } else {
+          entry.style.display = 'none';
+        }
+      });
+      
+      // Show only failed scenario entries
+      document.querySelectorAll('.scenario-entry').forEach(entry => {
+        if (entry.classList.contains('failed')) {
+          entry.style.display = 'block';
+          const details = entry.querySelector('.scenario-details');
+          if (details) details.classList.add('expanded');
+        } else {
+          entry.style.display = 'none';
+        }
+      });
+    }
+    
+    // Render step details
+    function renderStepDetails(step) {
+      if (!step.details) return '';
+      
+      let detailsHTML = '<div class="step-details">';
+      
+      // Cell value matches
+      if (step.details.cellValueMatches && step.details.cellValueMatches.length > 0) {
+        detailsHTML += `
+          <h4>Cell Value Verification</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Cell</th>
+                <th>Expected</th>
+                <th>Actual</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        
+        step.details.cellValueMatches.forEach(match => {
+          detailsHTML += `
+            <tr>
+              <td>${match.address}</td>
+              <td>${match.expected}</td>
+              <td>${match.actual}</td>
+              <td class="${match.match ? 'success' : 'failure'}">${match.match ? '✓' : '✗'}</td>
+            </tr>
+          `;
+        });
+        
+        detailsHTML += '</tbody></table>';
+      }
+      
+      // Operation matches
+      if (step.details.operationMatches && step.details.operationMatches.length > 0) {
+        detailsHTML += `
+          <h4>Operation Verification</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Operation</th>
+                <th>Executed</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        
+        step.details.operationMatches.forEach(match => {
+          detailsHTML += `
+            <tr>
+              <td>${match.operation}</td>
+              <td class="${match.executed ? 'success' : 'failure'}">${match.executed ? '✓' : '✗'}</td>
+            </tr>
+          `;
+        });
+        
+        detailsHTML += '</tbody></table>';
+      }
+      
+      // Query type match
+      if (step.details.queryTypeMatch) {
+        detailsHTML += `
+          <h4>Query Type Verification</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Expected</th>
+                <th>Actual</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>${step.details.queryTypeMatch.expected}</td>
+                <td>${step.details.queryTypeMatch.actual}</td>
+                <td class="${step.details.queryTypeMatch.match ? 'success' : 'failure'}">
+                  ${step.details.queryTypeMatch.match ? '✓' : '✗'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        `;
+      }
+      
+      detailsHTML += '</div>';
+      return detailsHTML;
+    }
+    
+    // Listen for messages from the test runner
+    window.addEventListener('message', event => {
+      if (event.data && event.data.type === 'test-results') {
+        updateDashboard(event.data.results);
+      }
+    });
+    
+    // Initialize the dashboard
+    function initializeDashboard() {
+      // Load all test results
+      loadAllResults();
+      
+      // Add notification to show the dashboard is ready
+      showNotification('Test dashboard initialized', 'info');
+    }
+    
+    // Run initialization when the page loads
+    document.addEventListener('DOMContentLoaded', initializeDashboard);
+    
+    // Also run it now in case the DOM is already loaded
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initializeDashboard();
+    }
+  </script>
+</body>
+</html>
