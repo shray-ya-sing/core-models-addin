@@ -11,8 +11,6 @@ interface PendingChangesBarProps {
   pendingChanges: PendingChange[];
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  onAcceptChange: (changeId: string) => void;
-  onRejectChange: (changeId: string) => void;
 }
 
 /**
@@ -21,9 +19,7 @@ interface PendingChangesBarProps {
 export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   pendingChanges,
   onAcceptAll,
-  onRejectAll,
-  onAcceptChange,
-  onRejectChange
+  onRejectAll
 }) => {
   if (pendingChanges.length === 0) {
     return null;
@@ -88,50 +84,7 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
         </div>
       </div>
       
-      {/* List of changes */}
-      <div className="space-y-2 max-h-40 overflow-y-auto">
-        {pendingChanges.map(change => (
-          <div key={change.id} className="flex items-center justify-between bg-gray-700/50 rounded p-2">
-            <div className="flex-1 truncate mr-2" style={{ 
-              fontSize: 'clamp(10px, 1.25vw, 12px)', 
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-              color: '#d1d5db'
-            }}>
-              {change.description}
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => onRejectChange(change.id)}
-                style={{ 
-                  fontSize: 'clamp(9px, 1vw, 11px)', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  color: '#f87171',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  transition: 'all 0.2s'
-                }}
-                className="hover:text-red-300 hover:bg-gray-600"
-              >
-                Reject
-              </button>
-              <button
-                onClick={() => onAcceptChange(change.id)}
-                style={{ 
-                  fontSize: 'clamp(9px, 1vw, 11px)', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  color: '#4ade80',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  transition: 'all 0.2s'
-                }}
-                className="hover:text-green-300 hover:bg-gray-600"
-              >
-                Accept
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* No individual changes listed - minimalist UI */}
     </div>
   );
 };
