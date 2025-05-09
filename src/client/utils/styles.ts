@@ -49,6 +49,123 @@ export function injectStyles(): () => void {
     .leading-relaxed { line-height: 1.625; }
     .tracking-tight { letter-spacing: -0.025em; }
     
+    /* Markdown content styling - ultra compact */
+    .markdown-content {
+      line-height: 1.2 !important;
+    }
+    
+    /* Paragraphs */
+    .markdown-content p,
+    .markdown-content > p,
+    div.markdown-content > p {
+      margin-top: 0.125rem !important;
+      margin-bottom: 0.125rem !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
+    
+    /* Headings */
+    .markdown-content h1, 
+    .markdown-content h2, 
+    .markdown-content h3, 
+    .markdown-content h4, 
+    .markdown-content h5, 
+    .markdown-content h6 {
+      margin-top: 0.25rem !important;
+      margin-bottom: 0.125rem !important;
+      line-height: 1.1 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
+    
+    .markdown-content h1 {
+      font-size: 1.25rem !important;
+      font-weight: 600 !important;
+    }
+    
+    .markdown-content h2 {
+      font-size: 1.15rem !important;
+      font-weight: 600 !important;
+    }
+    
+    .markdown-content h3 {
+      font-size: 1.05rem !important;
+      font-weight: 600 !important;
+    }
+    
+    /* Lists */
+    .markdown-content ul, 
+    .markdown-content ol,
+    div.markdown-content > ul,
+    div.markdown-content > ol {
+      list-style-position: inside !important;
+      padding-left: 0 !important;
+      margin-left: 0 !important;
+      margin-top: 0.125rem !important;
+      margin-bottom: 0.125rem !important;
+    }
+    
+    .markdown-content ul {
+      list-style-type: disc !important;
+    }
+    
+    .markdown-content ol {
+      list-style-type: decimal !important;
+    }
+    
+    /* List items */
+    .markdown-content li,
+    .markdown-content ul li,
+    .markdown-content ol li,
+    div.markdown-content > ul > li,
+    div.markdown-content > ol > li {
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      margin-left: 0 !important;
+      padding-left: 0 !important;
+      display: list-item !important;
+    }
+    
+    /* Paragraphs inside list items */
+    .markdown-content li p,
+    .markdown-content ul li p,
+    .markdown-content ol li p {
+      margin: 0 !important;
+      padding: 0 !important;
+      display: inline !important;
+    }
+    
+    /* Adjacent list items */
+    .markdown-content li + li {
+      margin-top: 0.125rem !important;
+    }
+    
+    /* Code blocks */
+    .markdown-content pre {
+      margin-top: 0.125rem !important;
+      margin-bottom: 0.125rem !important;
+      padding: 0.25rem !important;
+    }
+    
+    .markdown-content code {
+      padding: 0 0.25rem !important;
+    }
+    
+    /* Tables */
+    .markdown-content table {
+      margin-top: 0.125rem !important;
+      margin-bottom: 0.125rem !important;
+      font-size: 0.9em !important;
+    }
+    
+    /* Horizontal rules */
+    .markdown-content hr {
+      margin-top: 0.125rem !important;
+      margin-bottom: 0.125rem !important;
+    }
+    
     /* Color classes */
     .text-white { color: white; }
     .text-white\/30 { color: rgba(255, 255, 255, 0.3); }
