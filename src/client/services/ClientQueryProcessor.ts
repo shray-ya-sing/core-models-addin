@@ -476,30 +476,106 @@ export class ClientQueryProcessor {
       sm.updateStatus(pid, {
         stage: ProcessStage.ResponseGeneration,
         status: ProcessStatus.Pending,
-        message: 'Answering workbook question…'
+        message: 'Analyzing your workbook...'
       });
-  
-      const response = await this.anthropic.generateWorkbookExplanation(
-        query,
-        workbookJSON,
-        stream,
-        chatHistory,
-        attachments
-      );
-  
-      sm.updateStatus(pid, {
-        stage: ProcessStage.ResponseGeneration,
-        status: ProcessStatus.Success,
-        message: 'Answered question.'
-      });
-  
-      return {
-        processId: pid,
-        assistantMessage: response.assistantMessage,
-        command: null
-      };
+      
+      // Create a modified stream handler that adds immediate feedback messages
+      const enhancedStreamHandler = stream ? this.createEnhancedStreamHandler(stream) : undefined;
+      
+      // Start sending immediate feedback messages if streaming is enabled
+      let feedbackInterval: NodeJS.Timeout | null = null;
+      if (stream) {
+        // Send the first immediate feedback message
+        stream('I\'m analyzing your Excel workbook... ');
+        
+        // Set up a sequence of feedback messages to show while waiting
+        const feedbackMessages = [
+          'Looking at the workbook structure... ',
+          'Examining the data patterns... ',
+          'Analyzing formulas and relationships... ',
+          'Identifying key insights... '
+        ];
+        
+        let messageIndex = 0;
+        // Send a new message every 2-3 seconds to show progress
+        feedbackInterval = setInterval(() => {
+          if (messageIndex < feedbackMessages.length) {
+            stream(feedbackMessages[messageIndex]);
+            messageIndex++;
+          }
+        }, 2500);
+      }
+      
+      try {
+        // Call the actual workbook explanation generation
+        const response = await this.anthropic.generateWorkbookExplanation(
+          query,
+          workbookJSON,
+          enhancedStreamHandler,
+          chatHistory,
+          attachments
+        );
+        
+        // Clear the feedback interval if it exists
+        if (feedbackInterval) {
+          clearInterval(feedbackInterval);
+        }
+        
+        sm.updateStatus(pid, {
+          stage: ProcessStage.ResponseGeneration,
+          status: ProcessStatus.Success,
+          message: 'Answered question.'
+        });
+        
+        return {
+          processId: pid,
+          assistantMessage: response.assistantMessage,
+          command: null
+        };
+      } catch (error) {
+        // Clear the feedback interval if it exists
+        if (feedbackInterval) {
+          clearInterval(feedbackInterval);
+        }
+        
+        // If there was an error and we're streaming, let the user know
+        if (stream) {
+          stream('\n\nI encountered an issue while analyzing your workbook. Let me try again with a simpler approach...');
+        }
+        
+        // Update status to show we're retrying
+        sm.updateStatus(pid, {
+          stage: ProcessStage.ResponseGeneration,
+          status: ProcessStatus.Pending,
+          message: 'Retrying with simplified analysis...'
+        });
+        
+        // Rethrow the error to be handled by the caller
+        throw error;
+      }
     }
   
+    /**
+     * Creates an enhanced stream handler that manages the transition from feedback messages to actual response
+     * @param originalStreamHandler The original stream handler function
+     * @param query The user's query
+     * @returns A new stream handler function
+     */
+    private createEnhancedStreamHandler(originalStreamHandler: (chunk: string) => void): (chunk: string) => void {
+      let isFirstResponseChunk = true;
+      
+      return (chunk: string) => {
+        // For the first chunk from the actual LLM response, add a line break and a clear indicator
+        if (isFirstResponseChunk) {
+          originalStreamHandler('\n\nHere\'s my analysis:\n');
+          isFirstResponseChunk = false;
+        }
+        
+        // Pass the chunk to the original handler
+        originalStreamHandler(chunk);
+      };
+    }
+    
     private async answerWorkbookQuestionWithKB(
       query: string,
       workbookJSON: string,

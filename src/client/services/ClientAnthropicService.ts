@@ -1171,7 +1171,29 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
     chatHistory?: Array<{role: string, content: string, attachments?: Attachment[]}>,
     attachments?: Attachment[]
   ): Promise<any> {
-    try {
+    // Set a timeout for the API request (30 seconds)
+    const TIMEOUT_MS = 30000;
+    let timeoutId: NodeJS.Timeout;
+    
+    // Create a promise that rejects after the timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timed out after 30 seconds'));
+      }, TIMEOUT_MS);
+    });
+    
+    // Max retry attempts for rate limiting and other recoverable errors
+    const MAX_RETRIES = 3;
+    let retryCount = 0;
+    let lastError: any = null;
+    
+    while (retryCount <= MAX_RETRIES) {
+      try {
+        // Variables to store response data
+        let fullResponse = '';
+        let messageText = '';
+        let response: any;
+
       // Create a system prompt specifically for workbook explanations
       const systemPrompt = `Your name is Cori.You are an Excel assistant that helps users understand and analyze their spreadsheets. 
 
@@ -1454,9 +1476,210 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
           rawResponse: this.debugMode ? response : undefined,
         };
       }
+      // Clear the timeout if the request completes successfully
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      // Return the response object
+      return streamHandler ? {
+        id: uuidv4(),
+        assistantMessage: fullResponse,
+        command: null,
+        rawResponse: undefined
+      } : {
+        id: uuidv4(),
+        assistantMessage: messageText,
+        command: null,
+        rawResponse: this.debugMode ? response : undefined,
+      };
+      
     } catch (error: any) {
-      console.error('Error generating workbook explanation:', error);
-      throw this.handleApiError(error);
+      // Clear the timeout to prevent memory leaks
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      console.error(`Error generating workbook explanation (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
+      lastError = error;
+      
+      // Check if the error is recoverable (rate limit, server error, etc.)
+      if (this.isRecoverableError(error) && retryCount < MAX_RETRIES) {
+        retryCount++;
+        
+        // Calculate exponential backoff delay: 2^retry * 1000ms + random jitter
+        const backoffDelay = Math.min(
+          (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000),
+          10000 // Cap at 10 seconds max
+        );
+        
+        console.log(`Retrying in ${Math.round(backoffDelay / 1000)} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        continue; // Try again
+      }
+      
+      // If we're here, either we've exhausted retries or the error is not recoverable
+      // Try to generate a simplified response with a smaller context if possible
+      if (this.canUseReducedContext(error)) {
+        try {
+          console.log('Attempting to generate response with reduced context...');
+          return await this.generateSimplifiedExplanation(userQuery, workbookContext, streamHandler);
+        } catch (fallbackError) {
+          console.error('Fallback explanation also failed:', fallbackError);
+          // Continue to error handling below
+        }
+      }
+      
+      // Handle the error appropriately
+      throw this.handleApiError(lastError);
+    }
+    // This should never be reached, but TypeScript needs it for completeness
+    throw new Error('Unexpected end of retry loop');
+  }
+}
+  /**
+   * Checks if an error is recoverable (can be retried)
+   * @param error The error to check
+   * @returns True if the error is recoverable, false otherwise
+   */
+  private isRecoverableError(error: any): boolean {
+    // Check for rate limiting errors
+    if (error.status === 429) return true;
+    
+    // Check for server errors (5xx)
+    if (error.status >= 500 && error.status < 600) return true;
+    
+    // Check for specific Anthropic error types that are recoverable
+    const errorType = error.error?.type;
+    return [
+      'rate_limit_error',
+      'server_error',
+      'overloaded_error',
+      'timeout_error'
+    ].includes(errorType);
+  }
+  
+  /**
+   * Checks if we can use a reduced context approach for this error
+   * @param error The error to check
+   * @returns True if we can use reduced context, false otherwise
+   */
+  private canUseReducedContext(error: any): boolean {
+    // Check for context length/token limit errors
+    if (error.error?.type === 'context_length_exceeded') return true;
+    if (error.error?.message?.includes('token limit')) return true;
+    if (error.error?.message?.includes('too many tokens')) return true;
+    
+    // Also try reduced context for timeout errors
+    if (error.message?.includes('timed out')) return true;
+    
+    return false;
+  }
+  
+  /**
+   * Generate a simplified explanation with reduced context
+   * @param userQuery The user's query
+   * @param workbookContext The full workbook context
+   * @param streamHandler Optional stream handler
+   * @returns The simplified explanation
+   */
+  private async generateSimplifiedExplanation(
+    userQuery: string,
+    workbookContext: string,
+    streamHandler?: (chunk: string) => void
+  ): Promise<any> {
+    try {
+      // Parse the workbook context to reduce it
+      const parsedContext = JSON.parse(workbookContext);
+      
+      // Create a simplified version with less detail
+      const simplifiedContext = {
+        activeSheet: parsedContext.activeSheet,
+        sheets: parsedContext.sheets.map((sheet: any) => ({
+          name: sheet.name,
+          summary: sheet.summary,
+          // Include only basic metadata about tables, charts, etc.
+          tables: sheet.tables?.length ? `${sheet.tables.length} tables` : 'No tables',
+          charts: sheet.charts?.length ? `${sheet.charts.length} charts` : 'No charts',
+          // Limit the number of values and anchors
+          anchors: sheet.anchors?.slice(0, 10).map((a: any) => ({ 
+            address: a.address, 
+            value: a.value, 
+            type: a.type 
+          })),
+          values: sheet.values?.slice(0, 20).map((v: any) => ({ 
+            address: v.address, 
+            value: v.value,
+            formula: v.formula
+          }))
+        }))
+      };
+      
+      // Use a more concise system prompt
+      const concisePrompt = `You are Cori, an Excel assistant. Analyze the simplified workbook data and answer the user's question concisely. Focus only on the most important aspects of the workbook. If you can't provide a detailed answer due to limited context, explain what you can determine and what information is missing.`;
+      
+      // Use a smaller model for faster response
+      const modelToUse = this.models[ModelType.Light];
+      
+      // Create a simpler message structure
+      const messages = [
+        {
+          role: 'user',
+          content: `SIMPLIFIED EXCEL WORKBOOK CONTEXT:\n${JSON.stringify(simplifiedContext)}`
+        },
+        {
+          role: 'user',
+          content: userQuery
+        }
+      ];
+      
+      // Make the API call with reduced parameters
+      if (streamHandler) {
+        let fullResponse = '';
+        const stream = await this.anthropic.messages.create({
+          model: modelToUse,
+          system: concisePrompt,
+          messages: messages as any,
+          max_tokens: 1000, // Reduced token limit
+          temperature: 0.7,
+          stream: true
+        });
+        
+        for await (const chunk of stream) {
+          if (chunk.type === 'content_block_delta') {
+            const delta = chunk.delta as any;
+            if (delta && typeof delta.text === 'string') {
+              fullResponse += delta.text;
+              streamHandler(delta.text);
+            }
+          }
+        }
+        
+        return {
+          id: uuidv4(),
+          assistantMessage: fullResponse,
+          command: null,
+          rawResponse: undefined
+        };
+      } else {
+        const response = await this.anthropic.messages.create({
+          model: modelToUse,
+          system: concisePrompt,
+          messages: messages as any,
+          max_tokens: 1000, // Reduced token limit
+          temperature: 0.2,
+        });
+        
+        const messageText = response.content?.[0]?.type === 'text' 
+          ? response.content[0].text 
+          : 'No response text received';
+        
+        return {
+          id: uuidv4(),
+          assistantMessage: messageText,
+          command: null,
+          rawResponse: this.debugMode ? response : undefined,
+        };
+      }
+    } catch (error) {
+      console.error('Error generating simplified explanation:', error);
+      throw error;
     }
   }
 }
