@@ -210,7 +210,9 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   // Function to refresh pending changes
   const refreshPendingChanges = useCallback(() => {
     if (pendingChangesTracker && currentWorkbookId) {
+      console.log('Refreshing pending changes for workbook:', currentWorkbookId);
       const changes = pendingChangesTracker.getPendingChanges(currentWorkbookId);
+      console.log('Found pending changes:', changes.length);
       setPendingChanges(changes);
     }
   }, [pendingChangesTracker, currentWorkbookId]);
@@ -440,6 +442,16 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           // If the command is completed, log it but don't add a message to the chat
           if (command.status === CommandStatus.Completed) {
             console.log(`Command "${command.description}" completed successfully.`);
+            
+            // Refresh pending changes after command execution
+            console.log('🔄 [TailwindFinancialModelChat] Command completed, refreshing pending changes');
+            setTimeout(() => {
+              if (pct && workbookId) {
+                const changes = pct.getPendingChanges(workbookId);
+                console.log('Found pending changes after command execution:', changes.length);
+                setPendingChanges(changes);
+              }
+            }, 500); // Small delay to ensure changes are registered
           } else if (command.status === CommandStatus.Failed) {
             console.error(`Command "${command.description}" failed: ${command.error || 'Unknown error'}`);
             // Only show error messages, not success messages
@@ -1311,14 +1323,12 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
             </div>
           </div>
           
-          {/* Pending Changes Bar */}
+          {/* Pending Changes Bar - Simplified to only show global accept/reject */}
           {approvalEnabled && pendingChanges.length > 0 && (
             <PendingChangesBar
               pendingChanges={pendingChanges}
               onAcceptAll={handleAcceptAll}
               onRejectAll={handleRejectAll}
-              onAcceptChange={handleAcceptChange}
-              onRejectChange={handleRejectChange}
             />
           )}
           
