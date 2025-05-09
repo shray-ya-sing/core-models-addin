@@ -200,32 +200,18 @@ export class ClientExcelOperationGenerator {
         content: finalUserContent
       });
       
-      // Prepare the request body
-      const requestBody = {
+      // Use the Anthropic client from ClientAnthropicService
+      // This client is already initialized with dangerouslyAllowBrowser: true
+      const anthropicClient = this.anthropic.getClient();
+      
+      // Make the API call using the SDK
+      const responseData = await anthropicClient.messages.create({
         model: modelToUse,
         system: systemPrompt,
-        messages: anthropicMessages,
+        messages: anthropicMessages as any, // Type assertion to resolve SDK type issue
         max_tokens: 4000,
         temperature: 0.2
-      };
-      
-      // Make the direct API call using fetch
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01' // Use the appropriate API version
-        },
-        body: JSON.stringify(requestBody)
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
-      }
-      
-      const responseData = await response.json();
       
       // Extract the response content
       let responseContent = responseData.content?.[0]?.type === 'text' 
