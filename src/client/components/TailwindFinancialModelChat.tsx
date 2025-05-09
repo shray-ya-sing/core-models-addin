@@ -109,24 +109,6 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   const [approvalEnabled, setApprovalEnabled] = useState<boolean>(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   
-  // Function to clear all conversations
-  const clearAllConversations = useCallback(() => {
-    // Confirm before clearing
-    if (window.confirm('Are you sure you want to clear all past conversations? This cannot be undone.')) {
-      // Clear sessions from state
-      setSessions([]);
-      
-      // Clear from localStorage
-      localStorage.removeItem(STORAGE_KEY);
-      
-      // Create a new session if needed
-      if (currentSession) {
-        const newSessionId = createNewSession();
-        setCurrentSession(newSessionId);
-      }
-    }
-  }, [currentSession]);
-  
   // Create a new conversation session
   const createNewSession = useCallback(() => {
     const newSessionId = uuidv4();
@@ -147,6 +129,26 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
 
     return newSessionId;
   }, [currentWorkbookId]);
+  
+  // Function to clear all conversations - simplified to avoid any potential issues
+  const clearAllConversations = () => {
+    try {
+      // Clear from localStorage first
+      localStorage.removeItem(STORAGE_KEY);
+      
+      // Reset all state in one go
+      setSessions([]);
+      setMessages([]);
+      setCurrentSession('');
+      setHasUserSentMessage(false);
+      
+      // Force a page reload to ensure clean state
+      window.location.reload();
+    } catch (error) {
+      console.error('Error clearing conversations:', error);
+      // Silent error handling - no alert to avoid additional dialogs
+    }
+  };
 
   // Filter sessions by current workbook ID
   const getWorkbookSessions = (allSessions: ConversationSession[]) => {
@@ -183,6 +185,28 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   const [statusManager] = useState<ProcessStatusManager>(() => ProcessStatusManager.getInstance());
   const [currentStatus, setCurrentStatus] = useState<ProcessStatus | null>(null);
   
+  // Load sessions from localStorage when component mounts
+  useEffect(() => {
+    const savedSessions = localStorage.getItem(STORAGE_KEY);
+    if (savedSessions) {
+      try {
+        const parsedSessions = JSON.parse(savedSessions) as ConversationSession[];
+        setSessions(parsedSessions);
+        
+        // Load the most recent session
+        if (parsedSessions.length > 0) {
+          const latestSession = parsedSessions[0];
+          setCurrentSession(latestSession.id);
+          setMessages(latestSession.messages);
+        }
+      } catch (error) {
+        console.error('Error loading sessions from localStorage:', error);
+        // Clear invalid data
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+  }, []);
+
   // Function to refresh pending changes
   const refreshPendingChanges = useCallback(() => {
     if (pendingChangesTracker && currentWorkbookId) {
@@ -635,14 +659,21 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
     });
   };
   
-  const loadSession = (sessionId: string) => {
-    const session = sessions.find(s => s.id === sessionId);
-    if (session) {
-      setCurrentSession(sessionId);
-      setMessages(session.messages);
-      setHasUserSentMessage(session.messages.length > 0);
+  const loadSession = useCallback((sessionId: string) => {
+    try {
+      const session = sessions.find(s => s.id === sessionId);
+      if (session) {
+        // Set messages first, then update the current session ID
+        setMessages(session.messages || []);
+        setHasUserSentMessage((session.messages && session.messages.length > 0) || false);
+        setCurrentSession(sessionId);
+      } else {
+        console.warn(`Session with ID ${sessionId} not found`);
+      }
+    } catch (error) {
+      console.error('Error loading session:', error);
     }
-  };
+  }, [sessions]);
   
   const formatTimeAgo = (timestamp: number) => {
     const now = Date.now();
@@ -658,11 +689,13 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
   useEffect(() => {
     if (!currentSession && sessions.length > 0) {
       // If there are existing sessions but none selected, select the most recent one
-      setCurrentSession(sessions[0].id);
-      setMessages(sessions[0].messages);
-      setHasUserSentMessage(sessions[0].messages.length > 0);
+      try {
+        loadSession(sessions[0].id);
+      } catch (error) {
+        console.error('Error loading initial session:', error);
+      }
     }
-  }, [sessions]);
+  }, [sessions, loadSession, currentSession]);
   
   // Handle sending a message
   const handleSendMessage = async () => {
@@ -941,6 +974,13 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
                 fontSize: '12px'
               }}>Past Conversations</h2>
+              <button
+                onClick={clearAllConversations}
+                className="text-gray-400 hover:text-gray-300 text-xs px-2 py-1 rounded-md hover:bg-black/20 transition-colors"
+                aria-label="Clear all conversations"
+              >
+                Clear All
+              </button>
             </div>
           </div>
           
@@ -960,8 +1000,14 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                     key={session.id} 
                     className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
                     onClick={() => {
-                      loadSession(session.id);
-                      closePastConversationsView();
+                      try {
+                        loadSession(session.id);
+                        setTimeout(() => {
+                          closePastConversationsView();
+                        }, 0);
+                      } catch (error) {
+                        console.error('Error in onClick handler:', error);
+                      }
                     }}
                   >
                     <div className="flex-grow text-white/80" style={{ 
@@ -1066,7 +1112,13 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                   <div 
                     key={session.id} 
                     className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
-                    onClick={() => loadSession(session.id)}
+                    onClick={() => {
+                      try {
+                        loadSession(session.id);
+                      } catch (error) {
+                        console.error('Error loading session from main view:', error);
+                      }
+                    }}
                   >
                     <div className="flex-grow text-white/80" style={{ 
                       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
