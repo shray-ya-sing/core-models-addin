@@ -6,7 +6,7 @@
 /* Custom base styles */
 @layer base {
   html, body, #container, textarea, input, button, p, h1, h2, h3, div, span {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif !important;
   }
 }
 
@@ -110,10 +110,6 @@ div.markdown-content > ol > li {
   margin-bottom: 0.25rem !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-  margin-left: 0 !important;
-  padding-left: 0 !important;
-  display: block !important;
-  position: relative !important;
 }
 
 /* Paragraphs inside list items */
@@ -130,35 +126,38 @@ div.markdown-content > ol > li {
   margin-top: 0.25rem !important;
 }
 
-/* Numbered list specific styling */
+/* Numbered list styling - simplified approach */
 .markdown-content ol {
-  counter-reset: item !important;
-  list-style-type: none !important;
+  list-style-type: decimal !important;
+  padding-left: 2rem !important;
 }
 
 .markdown-content ol > li {
-  counter-increment: item !important;
+  display: list-item !important;
+  padding-left: 0.5rem !important;
 }
 
-.markdown-content ol > li::before {
-  content: counter(item) "." !important;
-  position: absolute !important;
-  left: -1.5rem !important;
-  width: 1.2rem !important;
-  text-align: right !important;
+/* Fix for numbered headings */
+.markdown-content ol > li > h1,
+.markdown-content ol > li > h2,
+.markdown-content ol > li > h3,
+.markdown-content ol > li > h4,
+.markdown-content ol > li > h5,
+.markdown-content ol > li > h6 {
+  display: inline-block !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
 }
 
-/* Bullet list specific styling */
+/* Bullet list styling - simplified approach */
 .markdown-content ul {
-  list-style-type: none !important;
+  list-style-type: disc !important;
+  padding-left: 2rem !important;
 }
 
-.markdown-content ul > li::before {
-  content: "•" !important;
-  position: absolute !important;
-  left: -1.2rem !important;
-  width: 1rem !important;
-  text-align: center !important;
+.markdown-content ul > li {
+  display: list-item !important;
+  padding-left: 0.5rem !important;
 }
 
 /* Code blocks */

@@ -45,7 +45,7 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
           </svg>
           <span style={{ 
             fontSize: 'clamp(10px, 1.25vw, 12px)', 
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
             color: '#d1d5db'
           }}>
             {pendingChanges.length} {pendingChanges.length === 1 ? 'change' : 'changes'} pending
@@ -56,7 +56,7 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
             onClick={onRejectAll}
             style={{ 
               fontSize: 'clamp(9px, 1vw, 11px)', 
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
               color: '#d1d5db',
               padding: '4px 8px',
               borderRadius: '4px',
@@ -70,7 +70,7 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
             onClick={onAcceptAll}
             style={{ 
               fontSize: 'clamp(9px, 1vw, 11px)', 
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
               backgroundColor: '#2563eb',
               color: 'white',
               padding: '4px 8px',

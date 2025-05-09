@@ -983,7 +983,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                 </svg>
               </button>
               <h2 className="font-medium text-white" style={{ 
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                 fontSize: '12px'
               }}>Past Conversations</h2>
               <button
@@ -1001,7 +1001,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
             <div className="flex flex-col space-y-0.5">
               {sessions.length === 0 ? (
                 <div className="text-gray-500 text-center py-2" style={{ 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                   fontSize: '11px' 
                 }}>
                   No conversations yet
@@ -1023,14 +1023,14 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                     }}
                   >
                     <div className="flex-grow text-white/80" style={{ 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                       fontSize: '12px' 
                     }}>{session.title}</div>
                     <div className="ml-2" style={{ 
                       fontSize: '10px', 
                       opacity: 0.4, 
                       color: 'white', 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
                     }}>{formatTimeAgo(session.lastUpdated)}</div>
                   </div>
                 ))
@@ -1063,7 +1063,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
               <p 
                 className="text-white/70 leading-relaxed text-left mb-6 max-w-sm" 
                 style={{ 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                   fontSize: '12px'
                 }}
               >
@@ -1082,7 +1082,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                   disabled={isLoading || !servicesReady}
                   rows={1}
                   style={{ 
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                    fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                     fontSize: '12px'
                   }}
                 />
@@ -1106,14 +1106,14 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
           <div className="w-full max-w-xl self-center past-conversations-section">
             <div className="mb-3">
               <h2 className="font-medium text-white" style={{ 
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                 fontSize: '12px'
               }}>Past Conversations</h2>
             </div>
             <div className="flex flex-col space-y-0.5">
               {sessions.length === 0 ? (
                 <div className="text-gray-500 text-center py-2" style={{ 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                   fontSize: '11px' 
                 }}>
                   No conversations yet
@@ -1133,14 +1133,14 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                     }}
                   >
                     <div className="flex-grow text-white/80" style={{ 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                       fontSize: '12px' 
                     }}>{session.title}</div>
                     <div className="ml-2" style={{ 
                       fontSize: '10px', 
                       opacity: 0.4, 
                       color: 'white', 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
                     }}>{formatTimeAgo(session.lastUpdated)}</div>
                   </div>
                 ))
@@ -1215,7 +1215,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                       {/* Status message */}
                       <span className="text-white" style={{ 
                         fontSize: 'clamp(10px, 1.25vw, 12px)', 
-                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                        fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
                       }}>
                         {message.content}
                       </span>
@@ -1231,7 +1231,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                     <div className="flex items-center">
                       <div className="bg-blue-500 text-white font-medium px-2 py-0.5 rounded mr-2 flex-shrink-0" style={{ 
                         fontSize: 'clamp(9px, 1vw, 11px)', 
-                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                        fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                         border: '1px solid #3b82f6',
                         boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.5)'
                       }}>
@@ -1241,7 +1241,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                         className="text-white/90 rounded px-2 py-1" 
                         style={{ 
                           fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                          fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                           backgroundColor: 'rgba(75, 85, 99, 0.3)', // Light grey background (tailwind gray-600 with opacity)
                           width: '100%'
                         }}
@@ -1259,7 +1259,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                   <div key={index} className="rounded-lg p-3">
                     <div className="text-white/90 whitespace-pre-wrap" style={{ 
                       fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
                     }}>
                       {message.isStreaming ? (
                         <TypewriterEffect text={message.content || 'Thinking...'} speed={20} loop={false} />
@@ -1281,7 +1281,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
               return (
                 <div key={index} className="bg-gray-900/60 rounded-lg p-3 text-red-400 shadow-sm" style={{ 
                   fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
                 }}>
                   {message.content}
                 </div>
@@ -1316,7 +1316,7 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                 style={{ 
                   fontSize: '8px', 
                   color: approvalEnabled ? '#d1d5db' : '#9ca3af',
-                  fontFamily: 'monospace',
+                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
                   letterSpacing: '-0.5px'
                 }}
               >

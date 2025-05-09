@@ -12,7 +12,7 @@ import { AllTestScenarios, TestResult, TestScenario } from "../../tests/e2e_test
 // Styles for the test UI
 const styles = {
   container: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontFamily: "Arial, 'Helvetica Neue', Helvetica, sans-serif",
     fontSize: "clamp(0.75rem, 1vw, 0.875rem)",
     padding: "0.5rem",
     backgroundColor: "#1a1a1a",

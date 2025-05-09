@@ -29,7 +29,7 @@ export function injectStyles(): () => void {
       margin: 0;
       padding: 0;
       min-height: 100vh;
-      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
       font-size: 14px;
       line-height: 1.5;
       overflow: hidden;

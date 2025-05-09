@@ -111,7 +111,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         {/* White text with smaller font size */}
         <span className="text-white" style={{ 
           fontSize: 'clamp(10px, 1.25vw, 12px)', 
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' 
+          fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
         }}>
           {message} [Status: {status}]
         </span>

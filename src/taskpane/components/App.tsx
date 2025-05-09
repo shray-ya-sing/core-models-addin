@@ -14,9 +14,9 @@ export interface AppProps {
 }
 
 const App: React.FC<AppProps> = () => {
-  // Apply global monospace font style
+  // Apply global Arial font style
   const monoStyle = {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
   };
   
   // State to trigger new conversation
@@ -82,7 +82,7 @@ const App: React.FC<AppProps> = () => {
       
       {/* Conditionally render TestMode only in non-production environments */}
       {process.env.NODE_ENV !== 'production' && TestMode && queryProcessor && commandInterpreter && showTestUI && (
-        <React.Suspense fallback={<div style={{ padding: '0.5rem', backgroundColor: '#1a1a1a', color: '#e0e0e0', fontFamily: 'monospace' }}>Loading test mode...</div>}>
+        <React.Suspense fallback={<div style={{ padding: '0.5rem', backgroundColor: '#1a1a1a', color: '#e0e0e0', fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' }}>Loading test mode...</div>}>
           <TestMode
             queryProcessor={queryProcessor}
             commandInterpreter={commandInterpreter}
