@@ -1201,7 +1201,9 @@ const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({
                         <TypewriterEffect text={message.content || 'Thinking...'} speed={20} loop={false} />
                       ) : (
                         <div className="markdown-content">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                          >
                             {message.content}
                           </ReactMarkdown>
                         </div>

@@ -85,8 +85,8 @@ div.markdown-content > p {
 .markdown-content ol,
 div.markdown-content > ul,
 div.markdown-content > ol {
-  list-style-position: inside !important;
-  padding-left: 0 !important;
+  list-style-position: outside !important;
+  padding-left: 1.5rem !important;
   margin-left: 0 !important;
   margin-top: 0.125rem !important;
   margin-bottom: 0.125rem !important;
@@ -107,12 +107,13 @@ div.markdown-content > ol {
 div.markdown-content > ul > li,
 div.markdown-content > ol > li {
   margin-top: 0 !important;
-  margin-bottom: 0 !important;
+  margin-bottom: 0.25rem !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   margin-left: 0 !important;
   padding-left: 0 !important;
-  display: list-item !important;
+  display: block !important;
+  position: relative !important;
 }
 
 /* Paragraphs inside list items */
@@ -126,7 +127,38 @@ div.markdown-content > ol > li {
 
 /* Adjacent list items */
 .markdown-content li + li {
-  margin-top: 0.125rem !important;
+  margin-top: 0.25rem !important;
+}
+
+/* Numbered list specific styling */
+.markdown-content ol {
+  counter-reset: item !important;
+  list-style-type: none !important;
+}
+
+.markdown-content ol > li {
+  counter-increment: item !important;
+}
+
+.markdown-content ol > li::before {
+  content: counter(item) "." !important;
+  position: absolute !important;
+  left: -1.5rem !important;
+  width: 1.2rem !important;
+  text-align: right !important;
+}
+
+/* Bullet list specific styling */
+.markdown-content ul {
+  list-style-type: none !important;
+}
+
+.markdown-content ul > li::before {
+  content: "•" !important;
+  position: absolute !important;
+  left: -1.2rem !important;
+  width: 1rem !important;
+  text-align: center !important;
 }
 
 /* Code blocks */
