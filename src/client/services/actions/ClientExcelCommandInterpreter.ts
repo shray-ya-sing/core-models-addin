@@ -367,44 +367,6 @@ export class ClientExcelCommandInterpreter {
     // Record the operation for version history if action recorder is available
     console.log(`🔄 [ClientExcelCommandInterpreter] Executing operation: ${opType} (ID: ${opId}, Execution: ${executionId}, Fingerprint: ${fingerprint})`);
     
-    // Variable to track if this operation requires approval
-    let requiresApproval = false;
-    let pendingChangeId = '';
-    
-    // Check if this operation requires approval
-    if (this.requireApproval && this.pendingChangesTracker && this.currentWorkbookId) {
-      console.log(`🔍 [ClientExcelCommandInterpreter] Operation requires approval: ${opType} (ID: ${opId})`);
-      
-      // Track the operation as a pending change
-      const pendingChange = this.pendingChangesTracker.trackChange(this.currentWorkbookId, operation);
-      pendingChangeId = pendingChange.id;
-      requiresApproval = true;
-      console.log(`✅ [ClientExcelCommandInterpreter] Added operation to pending changes: ${pendingChange.id}`);
-      
-      // Continue with execution to show the changes to the user
-      // The changes will be highlighted to indicate they are pending approval
-    }
-    
-    // If no approval required or approval system not set up, proceed with normal execution
-    if (this.actionRecorder && this.currentWorkbookId) {
-      console.log(`📝 [ClientExcelCommandInterpreter] Recording operation ${opType} for workbook: ${this.currentWorkbookId} (Execution: ${executionId})`);
-      try {
-        // Record the operation before executing it
-        await this.actionRecorder.recordOperation(context, this.currentWorkbookId, operation);
-        console.log(`✅ [ClientExcelCommandInterpreter] Successfully recorded operation ${opType} (Execution: ${executionId})`);
-      } catch (error) {
-        // Log error but continue with operation execution
-        console.error(`❌ [ClientExcelCommandInterpreter] Error recording operation for version history (Execution: ${executionId}):`, error);
-      }
-    } else {
-      if (!this.actionRecorder) {
-        console.warn(`⚠️ [ClientExcelCommandInterpreter] Cannot record operation: ActionRecorder not set (Execution: ${executionId})`);
-      }
-      if (!this.currentWorkbookId) {
-        console.warn(`⚠️ [ClientExcelCommandInterpreter] Cannot record operation: workbookId not set (Execution: ${executionId})`);
-      }
-    }
-    
     try {
       // Execute the operation based on its type
       switch (operation.op) {
@@ -530,7 +492,11 @@ export class ClientExcelCommandInterpreter {
           console.warn(`Unsupported operation: ${(operation as any).op}`);
       }
       
-      // Apply highlighting if this operation requires approval
+      // TEMPORARILY DISABLED: Highlighting functionality
+      console.log(`⏩ [ClientExcelCommandInterpreter] Skipping highlighting for operation ${opType}`);
+      
+      // Original code (commented out):
+      /*
       if (requiresApproval && this.pendingChangesTracker && pendingChangeId && this.currentWorkbookId) {
         console.log(`🎨 [ClientExcelCommandInterpreter] Applying highlighting for pending change: ${pendingChangeId}`);
         try {
@@ -557,6 +523,7 @@ export class ClientExcelCommandInterpreter {
           console.error(`❌ [ClientExcelCommandInterpreter] Error highlighting pending change: ${highlightError instanceof Error ? highlightError.message : String(highlightError)}`);
         }
       }
+      */
     } catch (error) {
       console.error(`Error executing operation ${operation.op}:`, error);
       throw error;

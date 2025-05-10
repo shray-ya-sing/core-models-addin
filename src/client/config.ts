@@ -15,7 +15,7 @@ export const config = {
   knowledgeBaseApiUrl: process.env.KNOWLEDGE_BASE_API_URL || 'http://localhost:8000/api/search/unified',
   
   // Model configuration
-  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-opus-20240229',
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-20250219',
   
   // Feature flags
   enableKnowledgeBase: process.env.ENABLE_KNOWLEDGE_BASE === 'true' || false,

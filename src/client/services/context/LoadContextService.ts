@@ -2,7 +2,8 @@ import { ClientWorkbookStateManager } from "./ClientWorkbookStateManager";
 import { ClientSpreadsheetCompressor } from "./ClientSpreadsheetCompressor";
 import { QueryContextBuilder } from './QueryContextBuilder';
 import { ChunkLocatorService } from './ChunkLocatorService';
-import { ClientAnthropicService } from "../llm/ClientAnthropicService";
+import { ClientAnthropicService } from '../llm/ClientAnthropicService';
+import { MistralClientService } from '../llm/MistralClientService';
 import { EmbeddingService } from './EmbeddingService';
  
  /* --------------------------  Main Class  -------------------------- */
@@ -23,6 +24,7 @@ import { EmbeddingService } from './EmbeddingService';
     // Whether advanced chunk location is enabled
     private useAdvancedChunkLocation: boolean = true;
     private anthropic: ClientAnthropicService;
+    private mistral: MistralClientService;
     // Add to your class properties
     private metadataCacheByWorkbookId: Map<string, any> = new Map();
 
@@ -35,11 +37,13 @@ import { EmbeddingService } from './EmbeddingService';
       compressor?: ClientSpreadsheetCompressor | null;
       useAdvancedChunkLocation?: boolean;
       anthropic: ClientAnthropicService;
+      mistral?: MistralClientService;
     }) {
       this.workbookManager = params.workbookStateManager ?? null;
       this.compressor = params.compressor ?? null;
       this.useAdvancedChunkLocation = params.useAdvancedChunkLocation ?? true;
       this.anthropic = params.anthropic;
+      this.mistral = params.mistral || new MistralClientService(false);
       this.metadataCacheByWorkbookId = new Map();
   
       // Create the query context builder
@@ -74,6 +78,7 @@ import { EmbeddingService } from './EmbeddingService';
       compressor?: ClientSpreadsheetCompressor | null;
       useAdvancedChunkLocation?: boolean;
       anthropic: ClientAnthropicService;
+      mistral?: MistralClientService;
     }): LoadContextService {
       if (!LoadContextService.instance) {
         if (!params) {
@@ -113,6 +118,7 @@ import { EmbeddingService } from './EmbeddingService';
             embeddingStore: this.embeddingService,
             dependencyAnalyzer: this.workbookManager.getDependencyAnalyzer(),
             anthropicService: this.anthropic,
+            mistralService: this.mistral,
             activeSheetName: this.workbookManager.getActiveSheetName()
         });
         

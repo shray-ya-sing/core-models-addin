@@ -452,6 +452,7 @@ export class ClientAnthropicService {
     try {
       // Create a powerful system prompt for query classification and decomposition
       const systemPrompt = `You are a command classifier for an expert financial model assistant specialized in Excel workbooks. Your task is to analyze user queries, classify them, and decompose them into logical steps.
+The chat history is only for reference, you have to decompose only the MOST RECENT QUERY FROM THE USER. DON"T INCLUDE PRIOR QUERIES IN YOUR CLASSIFICATION. 
 
 CLASSIFICATION TYPES:
 - greeting: ONLY pure greetings or pleasantries with no task, question or command intent (like "hello", "how are you?", etc.)
@@ -1094,6 +1095,7 @@ YOUR TASK:
 1. Given a user's query about an Excel workbook and a list of available sheets
 2. Determine which sheets are most likely relevant to answering their query
 3. Return ONLY a JSON array of sheet names, with no other text or explanation
+4. Select sheet based only on the most recent query
 
 You should prefer to include sheets when:
 - The sheet name is explicitly mentioned in the query
@@ -1108,7 +1110,157 @@ SPECIAL INSTRUCTIONS FOR WORKBOOK-LEVEL QUERIES:
 - Or if you're unsure whether the query needs one sheet or multiple sheets
 THEN include ALL sheets in your response.
 
-IF IN DOUBT, include the sheet rather than exclude it. It's always better to include too many sheets than too few.
+Here's some context about which data is typically in which sheet to help you make a decision about which sheets to include: 
+
+Income Statement
+
+Revenue/Sales: Total money earned from selling goods and services
+Cost of Goods Sold (COGS): Direct costs of producing goods/services sold
+Gross Profit: Revenue minus COGS
+Operating Expenses: Costs of running the business (not directly tied to production)
+
+Selling, General & Administrative (SG&A) expenses
+Research & Development (R&D) costs
+Marketing and advertising expenses
+Rent and facilities costs
+
+
+Operating Income/EBIT (Earnings Before Interest and Taxes): Profit from operations
+Interest Expense: Cost of borrowing money
+Income Before Tax: Operating income minus interest expense
+Income Tax Expense: Taxes paid on profits
+Net Income: Final profit after all expenses and taxes
+Earnings Per Share (EPS): Net income divided by outstanding shares
+EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization): Operating income plus depreciation and amortization
+
+Balance Sheet
+
+Assets:
+
+Current Assets:
+
+Cash and Cash Equivalents: Liquid funds and short-term investments
+Accounts Receivable: Money owed by customers
+Inventory: Goods available for sale
+Prepaid Expenses: Expenses paid in advance
+
+
+Non-Current Assets:
+
+Property, Plant & Equipment (PP&E): Physical assets
+Intangible Assets: Non-physical assets (patents, trademarks, goodwill)
+Long-term Investments: Investments held for over 1 year
+Deferred Tax Assets: Future tax benefits
+
+
+
+
+Liabilities:
+
+Current Liabilities:
+
+Accounts Payable: Money owed to suppliers
+Short-term Debt: Debt due within 1 year
+Accrued Expenses: Expenses recognized but not yet paid
+Deferred Revenue: Payment received for future services
+
+
+Non-Current Liabilities:
+
+Long-term Debt: Debt due beyond 1 year
+Pension Liabilities: Future obligations to employees
+Deferred Tax Liabilities: Future tax obligations
+
+
+
+
+Shareholders' Equity:
+
+Common Stock: Value of issued shares
+Additional Paid-in Capital: Money received above par value
+Retained Earnings: Accumulated profits not distributed
+Treasury Stock: Company shares repurchased (negative value)
+
+
+
+Cash Flow Statement
+
+Cash Flow from Operating Activities:
+
+Net Income: Starting point (from Income Statement)
+Non-cash adjustments: Add back depreciation, amortization
+Changes in Working Capital: Changes in current assets and liabilities
+
+
+Cash Flow from Investing Activities:
+
+Capital Expenditures (CapEx): Purchases of fixed assets
+Acquisitions: Purchases of other businesses
+Sales of Assets: Cash received from selling assets
+Investment Purchases/Sales: Cash used for/received from investments
+
+
+Cash Flow from Financing Activities:
+
+Debt Issuance/Repayment: Borrowing or paying back loans
+Stock Issuance/Repurchase: Selling or buying back company shares
+Dividend Payments: Distributions to shareholders
+Lease Payments: Payments for leased assets
+
+
+Net Change in Cash: Sum of all three cash flow sections
+Beginning and Ending Cash Balance: Cash position at start and end of period
+
+Financial Ratios (Derived from Statements)
+
+Profitability Ratios:
+
+Gross Margin: Gross Profit / Revenue
+Operating Margin: EBIT / Revenue
+Net Margin: Net Income / Revenue
+Return on Assets (ROA): Net Income / Total Assets
+Return on Equity (ROE): Net Income / Shareholders' Equity
+
+
+Liquidity Ratios:
+
+Current Ratio: Current Assets / Current Liabilities
+Quick Ratio: (Current Assets - Inventory) / Current Liabilities
+
+
+Solvency Ratios:
+
+Debt-to-Equity: Total Debt / Shareholders' Equity
+Interest Coverage: EBIT / Interest Expense
+
+
+Efficiency Ratios:
+
+Inventory Turnover: COGS / Average Inventory
+Accounts Receivable Turnover: Revenue / Average Accounts Receivable
+Asset Turnover: Revenue / Average Total Assets
+
+
+Valuation Ratios:
+
+Price-to-Earnings (P/E): Share Price / EPS
+Enterprise Value / EBITDA: (Market Cap + Debt - Cash) / EBITDA
+Price-to-Book (P/B): Share Price / Book Value per Share
+
+CIRCULARITY AND MODELLING LOGIC:
+In a 3-statement model, analysts will often forecast interest expense using a circular reference to allocate the cash throughout the company model. Interest expense is a use of cash and reduces net income, which in turn reduces net cash flow. As the model links all 3 financial statements, this can become a circular reference: lower net income can increase the revolver or short-term borrowings, which then increases the average revolver or short-term borrowings. This increase leads to a rise in interest expense, which again reduces net income, creating the circular reference.
+
+Interest Expense is used to calculate Net Income
+Net Income is used to calculate Cash Flow
+Cash Flow is used to calculate the Revolver / Line of Credit
+Revolver / Line of Credit impacts the amount of Interest Expense: More (or less) debt requires greater (or smaller) interest payments 
+
+IN an LBO model: loan is repaid with a cash flow sweep.  The interest is computed on the average debt and not the initial debt. As the interest expense is a deduction for cash flow calculation.  So the interest drives the cash flow and the cash flow drives debt which drives interest.
+With taxes, the taxes affect the cash flow, but the taxes are affected by the interest expense. 
+
+
+The user's workbook amy have abbreviated tabs 'BS' for balance sheet, 'IS' for income statement, and so on.
+Be conservative in your selection of sheets.
 
 RESPOND WITH VALID JSON ONLY - an array of strings representing sheet names.
 YOU ARE NOT RESPONDING TO A HUMAN. YOUR RESPONSE WILL BE SEEN BY AN INTERNAL PROCESSOR THAT EXPECTS A JSON CODE BLOCK CONTAINING JSON CODE.`;
@@ -1367,343 +1519,396 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
         let fullResponse = '';
         let messageText = '';
         let response: any;
-
-      // Create a system prompt specifically for workbook explanations
-      const systemPrompt = `Your name is Cori.You are an Excel assistant that helps users understand and analyze their spreadsheets. 
-
-Analyze the provided Excel workbook context and answer the user's question in a clear, concise way.
-
-For general workbook overview questions:
-1. Provide a high-level summary of the entire workbook (1 paragraph)
-2. Give a brief overview of EACH sheet (1 paragraph per sheet)
-3. Explain how the sheets relate to each other
-4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
-
-For sheet-specific questions:
-1. Focus on the requested sheet and ignore the metadata other other sheets unless they are linked to the requested sheet
-2. Explain its purpose, key data regions, and important formulas
-3. Highlight any charts or tables and their significance
-4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
-
-For cell-range-specific questions:
-1. Focus on the requested cell range
-2. Explain its purpose, key data regions, and important formulas
-3. DO NOT provide information regarding other cell ranges that are not linked to this cell range
-4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
-
-For single cell specific questions:
-1. Focus on the requested cell
-2. Explain its purpose, formula and formatting
-3. DO NOT provide information regarding other cells that are not linked to this cell/ that this cell is not linked to
-4. Explain the precedent values that this cell is linked to, and any dependent values that are linked to this cell
-
-DO NOT suggest executing commands or making edits to the workbook unless explicitly requested.
-Your goal is to help the user understand their existing data, not to modify it.
-
-Format your response using proper Markdown syntax:
-- Use headings (## and ###) to organize your explanation
-- Use bullet points or numbered lists where appropriate
-- Use **bold** or *italic* for emphasis
-- Use code formatting for formulas: \`=SUM(A1:A10)\`
-- Use tables for structured data where helpful
-
-Keep your explanations CONCISE. For a full workbook overview, aim for 1-2 paragraphs per sheet maximum. If a sheet does not have any data you do not need to include it in your summary.
-BE AS CONCISE AS POSSIBLE. DO NOT REPEAT CONTENT OR ADD REDUNDANT INFORMATION.
-RESPOND IN AS FEW CHARACTERS AS POSSIBLE
-
-When uncertain about any aspect, openly acknowledge limitations in your understanding rather than guessing.`;
-      
-      // For workbook explanations, we'll use Sonnet which balances capability and speed
-      const modelToUse = this.models[ModelType.Standard];
-      
-      // Log the workbook context being sent to the LLM if verbose logging is enabled
-      if (this.verboseLogging) {
-        try {
-          // Parse the JSON to format it nicely
-          const parsedContext = JSON.parse(workbookContext);
-          
-          // Create a collapsible console group
-          console.groupCollapsed(
-            '%c 📊 WORKBOOK CHUNKS SENT TO LLM 📊',
-            'background: #8e44ad; color: #ecf0f1; font-size: 14px; padding: 5px 10px; border-radius: 4px;'
-          );
-          
-          // Display basic stats
-          console.log(`%c Query: "${userQuery}"`, 'color: #3498db; font-weight: bold;');
-          console.log(`%c Total sheets: ${parsedContext.sheets.length}`, 'color: #2ecc71');
-          console.log(`%c Active sheet: ${parsedContext.activeSheet}`, 'color: #e67e22');
-          
-          // Show each sheet's data in a collapsible group
-          console.log('%c Included sheets:', 'color: #3498db; font-weight: bold;');
-          parsedContext.sheets.forEach((sheet: any, index: number) => {
-            console.groupCollapsed(`%c Sheet ${index + 1}: ${sheet.name}`, 'color: #16a085; font-weight: bold;');
+  
+        // Create a system prompt specifically for workbook explanations
+        const systemPrompt = `Your name is Cori.You are an Excel assistant that helps users understand and analyze their spreadsheets. 
+  
+  Analyze the provided Excel workbook context and answer the user's question in a clear, concise way.
+  
+  For general workbook overview questions:
+  1. Provide a high-level summary of the entire workbook (1 paragraph)
+  2. Give a brief overview of EACH sheet (1 paragraph per sheet)
+  3. Explain how the sheets relate to each other
+  4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
+  
+  For sheet-specific questions:
+  1. Focus on the requested sheet and ignore the metadata other other sheets unless they are linked to the requested sheet
+  2. Explain its purpose, key data regions, and important formulas
+  3. Highlight any charts or tables and their significance
+  4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
+  
+  For cell-range-specific questions:
+  1. Focus on the requested cell range
+  2. Explain its purpose, key data regions, and important formulas
+  3. DO NOT provide information regarding other cell ranges that are not linked to this cell range
+  4. DO NOT provide detailed cell-by-cell analysis unless specifically asked
+  
+  For single cell specific questions:
+  1. Focus on the requested cell
+  2. Explain its purpose, formula and formatting
+  3. DO NOT provide information regarding other cells that are not linked to this cell/ that this cell is not linked to
+  4. Explain the precedent values that this cell is linked to, and any dependent values that are linked to this cell
+  
+  DO NOT suggest executing commands or making edits to the workbook unless explicitly requested.
+  Your goal is to help the user understand their existing data, not to modify it.
+  
+  Format your response using proper Markdown syntax:
+  - Use headings (## and ###) to organize your explanation
+  - Use bullet points or numbered lists where appropriate
+  - Use **bold** or *italic* for emphasis
+  - Use code formatting for formulas: \`=SUM(A1:A10)\`
+  - Use tables for structured data where helpful
+  
+  Keep your explanations CONCISE. For a full workbook overview, aim for 1-2 paragraphs per sheet maximum. If a sheet does not have any data you do not need to include it in your summary.
+  BE AS CONCISE AS POSSIBLE. DO NOT REPEAT CONTENT OR ADD REDUNDANT INFORMATION.
+  RESPOND IN AS FEW CHARACTERS AS POSSIBLE
+  
+  When uncertain about any aspect, openly acknowledge limitations in your understanding rather than guessing.`;
+        
+        // For workbook explanations, we'll use Sonnet which balances capability and speed
+        const modelToUse = this.models[ModelType.Standard];
+        
+        // Log the workbook context being sent to the LLM if verbose logging is enabled
+        if (this.verboseLogging) {
+          try {
+            // Parse the JSON to format it nicely
+            const parsedContext = JSON.parse(workbookContext);
             
-            // Sheet summary
-            if (sheet.summary) {
-              console.log(`%c Summary: ${sheet.summary}`, 'color: #7f8c8d');
-            }
+            // Create a collapsible console group
+            console.groupCollapsed(
+              '%c 📊 WORKBOOK CHUNKS SENT TO LLM 📊',
+              'background: #8e44ad; color: #ecf0f1; font-size: 14px; padding: 5px 10px; border-radius: 4px;'
+            );
             
-            // Number of anchors
-            if (sheet.anchors && Array.isArray(sheet.anchors)) {
-              console.log(`%c Anchors: ${sheet.anchors.length}`, 'color: #9b59b6');
+            // Display basic stats
+            console.log(`%c Query: "${userQuery}"`, 'color: #3498db; font-weight: bold;');
+            console.log(`%c Total sheets: ${parsedContext.sheets.length}`, 'color: #2ecc71');
+            console.log(`%c Active sheet: ${parsedContext.activeSheet}`, 'color: #e67e22');
+            
+            // Show each sheet's data in a collapsible group
+            console.log('%c Included sheets:', 'color: #3498db; font-weight: bold;');
+            parsedContext.sheets.forEach((sheet: any, index: number) => {
+              console.groupCollapsed(`%c Sheet ${index + 1}: ${sheet.name}`, 'color: #16a085; font-weight: bold;');
               
-              // Sample a few anchors if there are many
-              const sampleSize = Math.min(5, sheet.anchors.length);
-              if (sampleSize > 0) {
-                console.log('%c Sample anchors:', 'color: #9b59b6');
-                sheet.anchors.slice(0, sampleSize).forEach((anchor: any) => {
-                  console.log(`  - ${anchor.address}: ${anchor.value || ''} ${anchor.type ? `(${anchor.type})` : ''}`);
-                });
+              // Sheet summary
+              if (sheet.summary) {
+                console.log(`%c Summary: ${sheet.summary}`, 'color: #7f8c8d');
               }
-            }
-            
-            // Number of values
-            if (sheet.values && Array.isArray(sheet.values)) {
-              console.log(`%c Values: ${sheet.values.length}`, 'color: #3498db');
               
-              // Sample a few values if there are many
-              const sampleSize = Math.min(5, sheet.values.length);
-              if (sampleSize > 0) {
-                console.log('%c Sample values:', 'color: #3498db');
-                sheet.values.slice(0, sampleSize).forEach((value: any) => {
-                  console.log(`  - ${value.address}: ${value.value || ''} ${value.formula ? `(Formula: ${value.formula})` : ''}`);
-                });
+              // Number of anchors
+              if (sheet.anchors && Array.isArray(sheet.anchors)) {
+                console.log(`%c Anchors: ${sheet.anchors.length}`, 'color: #9b59b6');
+                
+                // Sample a few anchors if there are many
+                const sampleSize = Math.min(5, sheet.anchors.length);
+                if (sampleSize > 0) {
+                  console.log('%c Sample anchors:', 'color: #9b59b6');
+                  sheet.anchors.slice(0, sampleSize).forEach((anchor: any) => {
+                    console.log(`  - ${anchor.address}: ${anchor.value || ''} ${anchor.type ? `(${anchor.type})` : ''}`);
+                  });
+                }
               }
-            }
+              
+              // Number of values
+              if (sheet.values && Array.isArray(sheet.values)) {
+                console.log(`%c Values: ${sheet.values.length}`, 'color: #3498db');
+                
+                // Sample a few values if there are many
+                const sampleSize = Math.min(5, sheet.values.length);
+                if (sampleSize > 0) {
+                  console.log('%c Sample values:', 'color: #3498db');
+                  sheet.values.slice(0, sampleSize).forEach((value: any) => {
+                    console.log(`  - ${value.address}: ${value.value || ''} ${value.formula ? `(Formula: ${value.formula})` : ''}`);
+                  });
+                }
+              }
+              
+              // Tables and charts
+              if (sheet.tables && Array.isArray(sheet.tables)) {
+                console.log(`%c Tables: ${sheet.tables.length}`, 'color: #f39c12');
+              }
+              
+              if (sheet.charts && Array.isArray(sheet.charts)) {
+                console.log(`%c Charts: ${sheet.charts.length}`, 'color: #e74c3c');
+              }
+              
+              console.groupEnd(); // End sheet group
+            });
             
-            // Tables and charts
-            if (sheet.tables && Array.isArray(sheet.tables)) {
-              console.log(`%c Tables: ${sheet.tables.length}`, 'color: #f39c12');
-            }
+            // Show raw JSON for developers who want to see everything
+            console.groupCollapsed('%c Raw JSON Data', 'color: #7f8c8d');
+            console.log(parsedContext);
+            console.groupEnd();
             
-            if (sheet.charts && Array.isArray(sheet.charts)) {
-              console.log(`%c Charts: ${sheet.charts.length}`, 'color: #e74c3c');
+            console.groupEnd(); // End main group
+          } catch (error) {
+            console.error('Error logging workbook context:', error);
+            console.log('%c Raw workbook context:', 'color: #e74c3c');
+            console.log(workbookContext.substring(0, 500) + '... [truncated]');
+          }
+        }
+        
+        // Prepare the messages array
+        const messages = [];
+        console.log('chatHistory', chatHistory.slice(0, 0));
+        // Add chat history for context
+        // comment this out for noe
+        /*
+        if (chatHistory && chatHistory.length > 0) {
+          for (const msg of chatHistory) {
+            if (msg.attachments && msg.attachments.length > 0) {
+              const content = [];
+              
+              // Add text content
+              content.push({
+                type: 'text' as const,
+                text: msg.content
+              });
+              
+              // Add attachments
+              for (const attachment of msg.attachments) {
+                if (attachment.type === 'image') {
+                  content.push({
+                    type: 'image' as const,
+                    source: {
+                      type: 'base64' as const,
+                      media_type: attachment.mimeType,
+                      data: attachment.content
+                    }
+                  });
+                } else if (attachment.type === 'pdf') {
+                  content.push({
+                    type: 'text' as const,
+                    text: `[Attached PDF: ${attachment.name}]`
+                  });
+                }
+              }
+              
+              messages.push({
+                role: msg.role as 'user' | 'assistant',
+                content: content
+              });
+            } else {
+              messages.push({
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content
+              });
             }
-            
-            console.groupEnd(); // End sheet group
+          }
+        }
+        */
+        // Add workbook context
+        messages.push({
+          role: 'user',
+          content: `EXCEL WORKBOOK CONTEXT:\n${workbookContext}`
+        });
+        
+        // Add user query with attachments if any
+        if (attachments && attachments.length > 0) {
+          const content = [];
+          
+          // Add text content
+          content.push({
+            type: 'text' as const,
+            text: userQuery
           });
           
-          // Show raw JSON for developers who want to see everything
-          console.groupCollapsed('%c Raw JSON Data', 'color: #7f8c8d');
-          console.log(parsedContext);
-          console.groupEnd();
+          // Add image attachments
+          for (const attachment of attachments) {
+            if (attachment.type === 'image') {
+              content.push({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: attachment.mimeType,
+                  data: attachment.content
+                }
+              });
+            } else if (attachment.type === 'pdf') {
+              // For PDFs, add a note
+              content.push({
+                type: 'text' as const,
+                text: `[Attached PDF: ${attachment.name}]`
+              });
+            }
+          }
           
-          console.groupEnd(); // End main group
-        } catch (error) {
-          console.error('Error logging workbook context:', error);
-          console.log('%c Raw workbook context:', 'color: #e74c3c');
-          console.log(workbookContext.substring(0, 500) + '... [truncated]');
+          messages.push({
+            role: 'user',
+            content: content
+          });
+        } else {
+          // Simple text-only message
+          messages.push({
+            role: 'user',
+            content: userQuery
+          });
         }
-      }
-      
-      // Prepare the messages array
-      const messages = [];
-      
-      // Add chat history for context
-      if (chatHistory && chatHistory.length > 0) {
-        for (const msg of chatHistory) {
-          if (msg.attachments && msg.attachments.length > 0) {
-            const content = [];
-            
-            // Add text content
-            content.push({
-              type: 'text' as const,
-              text: msg.content
-            });
-            
-            // Add attachments
-            for (const attachment of msg.attachments) {
-              if (attachment.type === 'image') {
-                content.push({
-                  type: 'image' as const,
-                  source: {
-                    type: 'base64' as const,
-                    media_type: attachment.mimeType,
-                    data: attachment.content
-                  }
-                });
-              } else if (attachment.type === 'pdf') {
-                content.push({
-                  type: 'text' as const,
-                  text: `[Attached PDF: ${attachment.name}]`
-                });
+        
+        // Handle streaming if requested
+        if (streamHandler) {
+          // Initialize variables to capture the streamed response
+          let fullResponse = '';
+          
+          // Create the streaming request
+          const stream = await this.anthropic.messages.create({
+            model: modelToUse,
+            system: systemPrompt,
+            messages: messages as any,
+            max_tokens: 4000,
+            temperature: 0.7,
+            stream: true
+          });
+          
+          // Process the stream
+          for await (const chunk of stream) {
+            // Check for content block delta type
+            if (chunk.type === 'content_block_delta') {
+              // Safely access potentially text content
+              const delta = chunk.delta as any; // Using any to bypass type checking for now
+              if (delta && typeof delta.text === 'string') {
+                fullResponse += delta.text;
+                
+                // Pass the chunk to the handler
+                streamHandler(delta.text);
               }
             }
-            
-            messages.push({
-              role: msg.role as 'user' | 'assistant',
-              content: content
-            });
-          } else {
-            messages.push({
-              role: msg.role as 'user' | 'assistant',
-              content: msg.content
-            });
           }
+          
+          // Clear the timeout if the request completes successfully
+          if (timeoutId) clearTimeout(timeoutId);
+          
+          return {
+            id: uuidv4(),
+            assistantMessage: fullResponse,
+            command: null, // No commands for explanations
+            rawResponse: undefined
+          };
+        } else {
+          // For non-streaming responses
+          const response = await this.anthropic.messages.create({
+            model: modelToUse,
+            system: systemPrompt,
+            messages: messages as any,
+            max_tokens: 2000,
+            temperature: 0.2,
+          });
+          
+          // Extract message text from the response
+          const messageText = response.content?.[0]?.type === 'text' 
+            ? response.content[0].text 
+            : 'No response text received';
+          
+          // Clear the timeout if the request completes successfully
+          if (timeoutId) clearTimeout(timeoutId);
+          
+          // Return the result
+          return {
+            id: uuidv4(),
+            assistantMessage: messageText,
+            command: null, // No commands for explanations
+            rawResponse: this.debugMode ? response : undefined,
+          };
         }
-      }
-      
-      // Add workbook context
-      messages.push({
-        role: 'user',
-        content: `EXCEL WORKBOOK CONTEXT:\n${workbookContext}`
-      });
-      
-      // Add user query with attachments if any
-      if (attachments && attachments.length > 0) {
-        const content = [];
+      } catch (error: any) {
+        // Clear the timeout to prevent memory leaks
+        if (timeoutId) clearTimeout(timeoutId);
         
-        // Add text content
-        content.push({
-          type: 'text' as const,
-          text: userQuery
-        });
+        console.error(`Error generating workbook explanation (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
+        lastError = error;
         
-        // Add image attachments
-        for (const attachment of attachments) {
-          if (attachment.type === 'image') {
-            content.push({
-              type: 'image' as const,
-              source: {
-                type: 'base64' as const,
-                media_type: attachment.mimeType,
-                data: attachment.content
-              }
-            });
-          } else if (attachment.type === 'pdf') {
-            // For PDFs, add a note
-            content.push({
-              type: 'text' as const,
-              text: `[Attached PDF: ${attachment.name}]`
-            });
-          }
-        }
-        
-        messages.push({
-          role: 'user',
-          content: content
-        });
-      } else {
-        // Simple text-only message
-        messages.push({
-          role: 'user',
-          content: userQuery
-        });
-      }
-      
-      // Handle streaming if requested
-      if (streamHandler) {
-        // Initialize variables to capture the streamed response
-        let fullResponse = '';
-        
-        // Create the streaming request
-        const stream = await this.anthropic.messages.create({
-          model: modelToUse,
-          system: systemPrompt,
-          messages: messages as any,
-          max_tokens: 4000,
-          temperature: 0.7,
-          stream: true
-        });
-        
-        // Process the stream
-        for await (const chunk of stream) {
-          // Check for content block delta type
-          if (chunk.type === 'content_block_delta') {
-            // Safely access potentially text content
-            const delta = chunk.delta as any; // Using any to bypass type checking for now
-            if (delta && typeof delta.text === 'string') {
-              fullResponse += delta.text;
-              
-              // Pass the chunk to the handler
-              streamHandler(delta.text);
-            }
-          }
+        // Check if the error is recoverable (rate limit, server error, etc.)
+        if (this.isRecoverableError(error) && retryCount < MAX_RETRIES) {
+          retryCount++;
+          
+          // Calculate exponential backoff delay: 2^retry * 1000ms + random jitter
+          const backoffDelay = Math.min(
+            (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000),
+            10000 // Cap at 10 seconds max
+          );
+          
+          console.log(`Retrying in ${Math.round(backoffDelay / 1000)} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          continue; // Try again
         }
         
-        return {
-          id: uuidv4(),
-          assistantMessage: fullResponse,
-          command: null, // No commands for explanations
-          rawResponse: undefined
-        };
-      } else {
-        // For non-streaming responses
-        const response = await this.anthropic.messages.create({
-          model: modelToUse,
-          system: systemPrompt,
-          messages: messages as any,
-          max_tokens: 2000,
-          temperature: 0.2,
-        });
-        
-        // Extract message text from the response
-        const messageText = response.content?.[0]?.type === 'text' 
-          ? response.content[0].text 
-          : 'No response text received';
-        
-        // Return the result
-        return {
-          id: uuidv4(),
-          assistantMessage: messageText,
-          command: null, // No commands for explanations
-          rawResponse: this.debugMode ? response : undefined,
-        };
+        // If we're here, either we've exhausted retries or the error is not recoverable
+        // Handle the error appropriately
+        throw this.handleApiError(lastError);
       }
-      // Clear the timeout if the request completes successfully
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      // Return the response object
-      return streamHandler ? {
-        id: uuidv4(),
-        assistantMessage: fullResponse,
-        command: null,
-        rawResponse: undefined
-      } : {
-        id: uuidv4(),
-        assistantMessage: messageText,
-        command: null,
-        rawResponse: this.debugMode ? response : undefined,
-      };
-      
-    } catch (error: any) {
-      // Clear the timeout to prevent memory leaks
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      console.error(`Error generating workbook explanation (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
-      lastError = error;
-      
-      // Check if the error is recoverable (rate limit, server error, etc.)
-      if (this.isRecoverableError(error) && retryCount < MAX_RETRIES) {
-        retryCount++;
-        
-        // Calculate exponential backoff delay: 2^retry * 1000ms + random jitter
-        const backoffDelay = Math.min(
-          (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000),
-          10000 // Cap at 10 seconds max
-        );
-        
-        console.log(`Retrying in ${Math.round(backoffDelay / 1000)} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-        continue; // Try again
-      }
-      
-      // If we're here, either we've exhausted retries or the error is not recoverable
-      // Handle the error appropriately
-      throw this.handleApiError(lastError);
     }
     // This should never be reached, but TypeScript needs it for completeness
     throw new Error('Unexpected end of retry loop');
   }
-}
+  
   /**
    * Checks if an error is recoverable (can be retried)
    * @param error The error to check
    * @returns True if the error is recoverable, false otherwise
    */
+  // Track rate limit state to implement adaptive backoff
+  private static rateLimitHit: boolean = false;
+  private static rateLimitResetTime: number = 0;
+  private static consecutiveRateLimits: number = 0;
+  
+  /**
+   * Checks if we're currently in a rate-limited state
+   * @returns True if we're currently rate limited
+   */
+  private isRateLimited(): boolean {
+    // If we haven't hit a rate limit, we're not rate limited
+    if (!ClientAnthropicService.rateLimitHit) return false;
+    
+    // Check if we've passed the reset time
+    const now = Date.now();
+    if (now > ClientAnthropicService.rateLimitResetTime) {
+      // Reset the rate limit state
+      ClientAnthropicService.rateLimitHit = false;
+      return false;
+    }
+    
+    // We're still in the rate limit period
+    return true;
+  }
+  
+  /**
+   * Set rate limit state when we hit a rate limit
+   * @param error The rate limit error
+   */
+  private setRateLimit(error: any): void {
+    // Mark that we've hit a rate limit
+    ClientAnthropicService.rateLimitHit = true;
+    ClientAnthropicService.consecutiveRateLimits++;
+    
+    // Calculate reset time - default to 60 seconds if we can't determine from headers
+    const now = Date.now();
+    let resetDelay = 60 * 1000; // 60 seconds default
+    
+    // Try to extract reset time from error message
+    if (error.error?.message?.includes('per minute')) {
+      // For per-minute rate limits, wait at least 60 seconds
+      resetDelay = 60 * 1000;
+    } else if (error.error?.message?.includes('per hour')) {
+      // For hourly rate limits, wait at least 5 minutes before trying again
+      resetDelay = 5 * 60 * 1000;
+    }
+    
+    // Apply exponential backoff based on consecutive rate limits
+    const backoffMultiplier = Math.min(Math.pow(2, ClientAnthropicService.consecutiveRateLimits), 16);
+    resetDelay = resetDelay * backoffMultiplier;
+    
+    // Set the reset time
+    ClientAnthropicService.rateLimitResetTime = now + resetDelay;
+    
+    console.warn(`Rate limit hit. Backing off for ${resetDelay/1000} seconds until ${new Date(ClientAnthropicService.rateLimitResetTime).toLocaleTimeString()}`);
+  }
+  
   private isRecoverableError(error: any): boolean {
     // Check for rate limiting errors
-    if (error.status === 429) return true;
+    if (error.status === 429 || error.error?.type === 'rate_limit_error') {
+      this.setRateLimit(error);
+      return true;
+    }
     
     // Check for server errors (5xx)
     if (error.status >= 500 && error.status < 600) return true;
@@ -1711,7 +1916,6 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
     // Check for specific Anthropic error types that are recoverable
     const errorType = error.error?.type;
     return [
-      'rate_limit_error',
       'server_error',
       'overloaded_error',
       'timeout_error'

@@ -1,0 +1,64 @@
+{
+    "title": "Analysis At Various Prices (AAVP) Table",
+    "description": "Instructions for building an Analysis At Various Prices table for public companies in Excel financial models",
+    "content": {
+      "overview": "An AAVP table shows how key valuation metrics change across different stock price scenarios, helping analysts understand sensitivity to price changes",
+      "prerequisites": [
+        "Current stock price",
+        "Shares outstanding",
+        "Total debt",
+        "Cash & equivalents",
+        "Current EBITDA or earnings metric",
+        "Current valuation multiples"
+      ],
+      "table_structure": {
+        "columns": [
+          "Price per share scenarios",
+          "% Change from Current Price",
+          "Implied Market Cap",
+          "Implied Enterprise Value (EV)",
+          "Implied EV/[Earnings Metric] Multiple",
+          "Additional user-specified metrics (P/E, FCF yield, etc.)"
+        ],
+        "price_scenarios": {
+          "default": "-20% to +20% in 5% increments",
+          "custom_options": [
+            "User-specified percentage range",
+            "User-specified absolute values",
+            "User-specified step size"
+          ]
+        }
+      },
+      "formulas": {
+        "percent_change": "=([Price Scenario Cell] / [Current Price Cell]) - 1",
+        "market_cap": "=[Price Scenario Cell] * [Shares Outstanding Cell]",
+        "enterprise_value": "=[Implied Market Cap Cell] + [Total Debt Cell] - [Cash Cell]",
+        "ev_multiple": "=[Implied Enterprise Value Cell] / [Earnings Metric Cell]",
+        "pe_ratio": "=[Price Scenario Cell] / ([Net Income Cell] / [Shares Outstanding Cell])",
+        "fcf_yield": "=([FCF Cell] / [Shares Outstanding Cell]) / [Price Scenario Cell]",
+        "dividend_yield": "=[Annual Dividend Cell] / [Price Scenario Cell]"
+      },
+      "formatting": {
+        "percent_change": "Percentage format",
+        "monetary_values": "Currency format with appropriate precision",
+        "multiples": "1-2 decimal places (or as specified)",
+        "highlighting": "Conditional formatting for current price row",
+        "styling": "Borders and shading as specified"
+      },
+      "integration": {
+        "sensitivity_analysis": "Create named ranges for columns to reference in other model sections",
+        "dynamic_updates": "Ensure formulas update if price scenarios change"
+      },
+      "keywords": [
+        "AAVP",
+        "sensitivity analysis",
+        "valuation",
+        "stock price",
+        "multiple",
+        "enterprise value",
+        "market cap",
+        "financial modeling",
+        "equity analysis"
+      ]
+    }
+  }

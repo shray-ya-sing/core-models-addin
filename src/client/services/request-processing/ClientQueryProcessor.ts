@@ -1,11 +1,13 @@
 // src/client/services/ClientQueryProcessor.ts
 import { v4 as uuidv4 } from 'uuid';
 import { ClientAnthropicService } from "../llm/ClientAnthropicService";
+import { QAService } from "../qa/qaService";
 import { ClientKnowledgeBaseService } from "../ClientKnowledgeBaseService";
 import { ClientCommandManager } from "../actions/ClientCommandManager";
 import { GreetingsService } from "../greetings/GreetingsService";
 import { ClientExcelOperationGenerator } from '../actions/ClientExcelOperationGenerator';
 import { ExcelCommandPlan } from '../../models/ExcelOperationModels';
+
 import {
   Command,
   CommandStatus,
@@ -74,8 +76,7 @@ export class ClientQueryProcessor {
   private useOpenAIFallback: boolean;
   // Greetings service for handling simple greetings
   private greetingsService: GreetingsService = new GreetingsService();
-
-  
+  private qaService: QAService;  
 
   constructor(params: {
     anthropic: ClientAnthropicService;
@@ -84,6 +85,7 @@ export class ClientQueryProcessor {
     commandManager?: ClientCommandManager | null;
     openai?: OpenAIClientService;
     useOpenAIFallback?: boolean;
+    qaService?: QAService;
   }) {
     this.anthropic = params.anthropic;
     this.kbService = params.kbService ?? null;
@@ -92,7 +94,8 @@ export class ClientQueryProcessor {
     this.currentQuerySteps = [];
     this.openai = params.openai;
     this.useOpenAIFallback = params.useOpenAIFallback !== undefined ? params.useOpenAIFallback : true;
-
+    // Initialize QAService with verboseLogging and debugMode - it will load API keys from .env
+    this.qaService = params.qaService ?? new QAService(false, false);
   }
   
 
@@ -108,6 +111,7 @@ export class ClientQueryProcessor {
   ): Promise<QueryProcessorResult> {
     const processId = uuidv4();
     const status = ProcessStatusManager.getInstance();
+    let llmResponse = '';
 
     status.updateStatus(processId, {
       stage: ProcessStage.ResponseGeneration,
@@ -203,10 +207,16 @@ export class ClientQueryProcessor {
     let combinedMessage = "";
     
     // Process steps sequentially with proper async/await
-    for (const step of queryClassification.steps) {
+    for (let i = 0; i < queryClassification.steps.length; i++) {
+      const step = queryClassification.steps[i];
       const queryType = step.step_type;
       const query = step.step_specific_query;
       const stepIndex = step.step_index;
+      
+      // If this isn't the first step and we have streaming enabled, send an inter-step message
+      if (i > 0 && streamingWrapper) {
+        streamingWrapper("\n\nI'm looking further... give me a moment to try something else...\n");
+      }
       
       // Log that we're completing this step
       console.log(`%c Completing step ${stepIndex} of type ${queryType} with query: ${query}`, 'color: #2ecc71');
@@ -265,7 +275,7 @@ export class ClientQueryProcessor {
               chatHistory,
               attachments
             );
-            combinedMessage += result.assistantMessage;
+            combinedMessage += "\n"+result.assistantMessage;
           } else if (queryType === QueryType.WorkbookQuestionWithKB) {
             console.log(`%c Processing workbook question with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestionWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
             
@@ -283,7 +293,7 @@ export class ClientQueryProcessor {
               chatHistory,
               attachments
             );  
-            combinedMessage = result.assistantMessage;
+            combinedMessage += "\n"+result.assistantMessage;
           } else if (queryType === QueryType.WorkbookCommand) {
             console.log(`%c Processing workbook command: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommand)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
             
@@ -296,11 +306,12 @@ export class ClientQueryProcessor {
             const result = await this.runWorkbookCommand(
               query,
               workbookJSON,
+              streamingWrapper,
               processId,
               chatHistory,
               attachments
             );
-            combinedMessage+=result.assistantMessage;
+            combinedMessage+="\n"+result.assistantMessage;
           } else if (queryType === QueryType.WorkbookCommandWithKB) {
             console.log(`%c Processing workbook command with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommandWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
             
@@ -313,11 +324,12 @@ export class ClientQueryProcessor {
             const result = await this.runWorkbookCommand(
               query,
               workbookJSON,
+              streamingWrapper,
               processId,
               chatHistory,
               attachments
             );
-            combinedMessage+=result.assistantMessage;
+            combinedMessage+="\n"+result.assistantMessage;
           }
         }
         else if (queryType === QueryType.Unknown) {
@@ -344,10 +356,6 @@ export class ClientQueryProcessor {
           progressInterval = null;
         }
 
-        if (combinedMessage=='') {
-          combinedMessage = "\n\nI'm sorry, I ran into some trouble... Please try again";
-        }
-        
         return {
           processId,
           assistantMessage: combinedMessage,
@@ -376,9 +384,6 @@ export class ClientQueryProcessor {
       progressInterval = null;
     }
     
-    if (combinedMessage=='') {
-      combinedMessage = "\n\nI'm sorry, I ran into some trouble... Please try again";
-    }
     return {
       processId,
       assistantMessage: combinedMessage,
@@ -496,13 +501,53 @@ export class ClientQueryProcessor {
     }
   }
 
+  private async classifyQuery(
+    query: string,
+    chatHistory: Array<{role: string, content: string, attachments?: any[]}> = []
+  ): Promise<QueryClassification> {
+    try {
+      const res = await this.anthropic.classifyQueryAndDecompose(query, chatHistory);
+
+      // Deserialize the classification result
+      const classification = res as QueryClassification;
+      
+      return classification;
+    } catch (anthropicError) {
+      console.warn('Anthropic classification failed, falling back to OpenAI:', anthropicError);
+      
+      // If Anthropic fails, try OpenAI as fallback
+      try {
+        const res = await this.openai.classifyQueryAndDecompose(query, chatHistory);
+        
+        // Deserialize the classification result
+        const classification = res as QueryClassification;
+        
+        return classification;
+      } catch (openaiError) {
+        console.error('OpenAI classification failed, falling back to simple explanation:', openaiError);
+        return {
+          query_type: 'workbook_question',
+        steps: [
+          {
+            step_index: 0,
+            step_action: 'Answer question about workbook',
+            step_specific_query: query,
+            step_type: 'workbook_question',
+            depends_on: []
+          }
+        ]
+      };
+    }
+  }
+}
+
   private async classifyQueryAndDecompose(
     query: string,
     _pid: string, 
     chatHistory: Array<{role: string, content: string, attachments?: any[]}> = []
   ): Promise<QueryClassification> {
     try {
-      const res = await this.anthropic.classifyQueryAndDecompose(query, chatHistory);
+      const res = await this.classifyQuery(query, chatHistory);
       
       // Deserialize the classification result
       const classification = res as QueryClassification;
@@ -640,9 +685,9 @@ export class ClientQueryProcessor {
         // Set up a sequence of feedback messages to show while waiting
         const feedbackMessages = [
           '\nI\'m looking at the workbook structure and examining any linkages across tabs...',
-          '\nI\'m Examining the data patterns and relationships to determine how the data is structured... ',
-          '\nI\'m Analyzing formulas and relationships to understand how the data values are being calculated... ',
-          '\nI\'m Identifying key insights and relationships to fully understand the logic behind the analysis... '
+          '\nI\'m examining the data patterns and relationships to determine how the data is structured... ',
+          '\nI\'m analyzing formulas and relationships to understand how the data values are being calculated... ',
+          '\nI\'m identifying key insights and relationships to fully understand the logic behind the analysis... '
         ];
         
         let messageIndex = 0;
@@ -672,7 +717,7 @@ export class ClientQueryProcessor {
       
       try {
         // Call the actual workbook explanation generation
-        const response = await this.anthropic.generateWorkbookExplanation(
+        const response = await this.qaService.generateWorkbookExplanation(
           query,
           workbookJSON,
           enhancedStreamHandler,
@@ -691,6 +736,8 @@ export class ClientQueryProcessor {
           message: 'Successfully analyzed workbook'
         });
         
+        // For streamed responses, we still want to return the complete message
+        // The streaming has already completed at this point
         return {
           processId: pid,
           assistantMessage: response.assistantMessage,
@@ -714,108 +761,15 @@ export class ClientQueryProcessor {
         // Update status to show we're trying an alternative service
         sm.updateStatus(pid, {
           stage: ProcessStage.ResponseGeneration,
-          status: ProcessStatus.Pending,
-          message: 'Retrying analysis'
-        });
-        
-        // Try using OpenAI as a fallback if available
-        if (this.openai) {
-          try {
-            console.log('Attempting to use OpenAI as fallback for workbook explanation');
-            
-            // If streaming, add a message about the fallback attempt
-            if (stream) {
-              stream('\n\nTrying a different approach to naalyze your workbook');
-            }
-            
-            // Call OpenAI's workbook explanation method
-            const openaiResponse = await this.openai.generateWorkbookExplanation(
-              query,
-              workbookJSON,
-              enhancedStreamHandler, // Use the same enhanced stream handler
-              chatHistory,
-              attachments
-            );
-            
-            sm.updateStatus(pid, {
-              stage: ProcessStage.ResponseGeneration,
-              status: ProcessStatus.Success,
-              message: 'Successfully analyzed workbook'
-            });
-            
-            return {
-              processId: pid,
-              assistantMessage: openaiResponse.assistantMessage,
-              command: null
-            };
-          } catch (fallbackError) {
-            console.error('OpenAI fallback also failed:', fallbackError);
-            
-            // If there was an error with the fallback and we're streaming, let the user know
-            if (stream) {
-              // Add a line break to separate from previous messages
-              stream('\n\n');
-              
-              // Send the first recovery message immediately
-              const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
-              stream(randomMessage);
-              
-              // Set up a new interval for recovery messages
-              let recoveryIndex = 0;
-              const recoveryInterval = setInterval(() => {
-                recoveryIndex++;
-                if (recoveryIndex < recoveryMessages.length) {
-                  stream('\n\n' + recoveryMessages[recoveryIndex]);
-                } else {
-                  // Stop after we've shown all recovery messages
-                  clearInterval(recoveryInterval);
-                }
-              }, 3000); // Show a new message every 3 seconds
-              
-              // Clear the recovery interval after 15 seconds to prevent endless messages
-              setTimeout(() => {
-                clearInterval(recoveryInterval);
-              }, 15000);
-            }
-          }
-        } else {
-          // If OpenAI is not available and we're streaming, show recovery messages
-          if (stream) {
-            // Add a line break to separate from previous messages
-            stream('\n\n');
-            
-            // Send the first recovery message immediately
-            const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
-            stream(randomMessage);
-            
-            // Set up a new interval for recovery messages
-            let recoveryIndex = 0;
-            const recoveryInterval = setInterval(() => {
-              recoveryIndex++;
-              if (recoveryIndex < recoveryMessages.length) {
-                stream('\n\n' + recoveryMessages[recoveryIndex]);
-              } else {
-                // Stop after we've shown all recovery messages
-                clearInterval(recoveryInterval);
-              }
-            }, 3000); // Show a new message every 3 seconds
-            
-            // Clear the recovery interval after 15 seconds to prevent endless messages
-            setTimeout(() => {
-              clearInterval(recoveryInterval);
-            }, 15000);
-          }
-        }
-        
-        // Update status to show we're having issues
-        sm.updateStatus(pid, {
-          stage: ProcessStage.ResponseGeneration,
-          status: ProcessStatus.Pending,
-          message: 'Retrying analysis'
-        });
-        
-        // Rethrow the error to be handled by the caller
-        throw error;
+          status: ProcessStatus.Error,
+          message: 'Could not complete request'
+        })
+
+        return {
+          processId: pid,
+          assistantMessage: "I'm sorry, I couldn't complete your request at this time. Please try again later.",
+          command: null
+        };
       }
     }
   
@@ -892,6 +846,7 @@ export class ClientQueryProcessor {
     private async runWorkbookCommand(
       query: string,
       workbookJSON: string,
+      stream: ((c: string) => void) | undefined,
       pid: string,
       chatHistory: Array<{ role: string; content: string; attachments?: any[] }>,
       attachments?: any[]
@@ -901,8 +856,63 @@ export class ClientQueryProcessor {
       sm.updateStatus(pid, {
         stage: ProcessStage.CommandPlanning,
         status: ProcessStatus.Pending,
-        message: 'Command plan ready...'
+        message: 'Planning actions'
       });
+
+      // Flag to track if the actual LLM response has started
+      let actualResponseStarted = false;
+      
+      // Create a modified stream handler that stops placeholder text when actual response starts
+      const enhancedStreamHandler = stream ? 
+        (chunk: string) => {
+          // If this is the first chunk from the actual LLM response
+          if (!actualResponseStarted) {
+            actualResponseStarted = true;
+            // Add a line break to separate from any placeholder text
+            stream('\n\n');
+          }
+          // Pass the chunk to the original stream handler
+          stream(chunk);
+        } : undefined;
+      
+      // Start sending immediate feedback messages if streaming is enabled
+      let feedbackInterval: NodeJS.Timeout | null = null;
+      if (stream) {
+        // Send the first immediate feedback message
+        stream('\nI\'m analyzing your Excel workbook... ');
+        
+        // Set up a sequence of feedback messages to show while waiting
+        const feedbackMessages = [
+          '\nI\'m planning how to execute this request for you...',
+          '\nI\'m gathering internal resources to execute this request... ',
+          '\nI\'m retriveing the right tools to help me execute this request... ',
+          '\nI\'m Identifying the right cells I need to execute this request... '
+        ];
+        
+        let messageIndex = 0;
+        // Send a new message every 2-3 seconds to show progress
+        feedbackInterval = setInterval(() => {
+          // Stop sending placeholder messages if actual response has started
+          if (actualResponseStarted) {
+            clearInterval(feedbackInterval!);
+            feedbackInterval = null;
+            return;
+          }
+          
+          if (messageIndex < feedbackMessages.length) {
+            stream(feedbackMessages[messageIndex]);
+            messageIndex++;
+          }
+        }, 2500);
+      }
+
+      // Recovery messages to show if the API call fails
+      const recoveryMessages = [
+        "I'm having some trouble connecting to the server...",
+        "There seems to be a network issue. I'll keep trying...",
+        "The server is currently busy. Please bear with me...",
+        "I'm experiencing some connectivity problems right now..."
+      ];
     
       try {
         // Ensure commandManager is available
@@ -1002,8 +1012,7 @@ export class ClientQueryProcessor {
           // Error will be handled by the status listener
         });
         
-        // Generate a simpler user-friendly message without mentioning operation count
-        const assistantMessage = `I'll ${operationPlan.description.toLowerCase()}.`;
+        const assistantMessage = `Successfully completed: ${operationPlan.description.toLowerCase()}.`;
         
         return {
           processId: pid,
@@ -1019,6 +1028,32 @@ export class ClientQueryProcessor {
           message: `I failed to complete the operation. Please try again`
         });
         
+        // If there was an error with the fallback and we're streaming, let the user know
+        if (stream) {
+          // Add a line break to separate from previous messages
+          stream('\n\n');
+          
+          // Send the first recovery message immediately
+          const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
+          stream(randomMessage);
+          
+          // Set up a new interval for recovery messages
+          let recoveryIndex = 0;
+          const recoveryInterval = setInterval(() => {
+            recoveryIndex++;
+            if (recoveryIndex < recoveryMessages.length) {
+              stream('\n\n' + recoveryMessages[recoveryIndex]);
+            } else {
+              // Stop after we've shown all recovery messages
+              clearInterval(recoveryInterval);
+            }
+          }, 3000); // Show a new message every 3 seconds
+          
+          // Clear the recovery interval after 15 seconds to prevent endless messages
+          setTimeout(() => {
+            clearInterval(recoveryInterval);
+          }, 15000);
+        }
         return {
           processId: pid,
           assistantMessage: "I'm sorry, I encountered an error while planning the Excel operations. Please try again with a more specific request.",

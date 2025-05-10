@@ -7,6 +7,7 @@ import { ClientSpreadsheetCompressor } from '../services/context/ClientSpreadshe
 import { ClientExcelCommandAdapter } from '../services/actions/ClientExcelCommandAdapter';
 import { ClientExcelCommandInterpreter } from '../services/actions/ClientExcelCommandInterpreter';
 import { ClientAnthropicService } from '../services/llm/ClientAnthropicService';
+import { MistralClientService } from '../services/llm/MistralClientService';
 import { ClientKnowledgeBaseService } from '../services/ClientKnowledgeBaseService';
 import { ClientQueryProcessor } from '../services/request-processing/ClientQueryProcessor';
 import { OpenAIClientService } from '../services/llm/OpenAIClientService';
@@ -160,12 +161,14 @@ export const useChatServices = (
         const manager = new ClientCommandManager(stateManager, adapter);
         
         const anthropic = new ClientAnthropicService(config.anthropicApiKey, config.openaiApiKey);
+        const mistral = new MistralClientService(config.debugMode);
         const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
         // Use the existing LoadContextService singleton or create a new one if it doesn't exist
         const loadContextService = LoadContextService.getInstance({
           workbookStateManager: stateManager,
           compressor,
           anthropic,
+          mistral,
           useAdvancedChunkLocation: true
         });
         

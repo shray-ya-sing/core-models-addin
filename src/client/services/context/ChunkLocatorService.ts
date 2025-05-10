@@ -3,7 +3,7 @@ import { ClientAnthropicService } from '../llm/ClientAnthropicService';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';
 import { RangeDependencyAnalyzer } from './RangeDependencyAnalyzer';
 import { ChatHistoryMessage } from '../request-processing/ClientQueryProcessor';
-
+import { MistralClientService } from '../llm/MistralClientService';
 // Forward declarations for EmbeddingStore which will be implemented later
 export type EmbeddingVector = number[];
 
@@ -78,12 +78,14 @@ export class ChunkLocatorService {
   private config: ChunkLocatorConfig;
   private activeSheetName: string | null = null;
   private chatHistory: ChatHistoryMessage[] = [];
+  private mistralService: MistralClientService;
 
   constructor(params: {
     metadataCache: WorkbookMetadataCache;
     embeddingStore: EmbeddingStore;
     dependencyAnalyzer: RangeDependencyAnalyzer;
     anthropicService?: ClientAnthropicService;
+    mistralService?: MistralClientService;
     config?: Partial<ChunkLocatorConfig>;
     activeSheetName?: string;
     chatHistory?: ChatHistoryMessage[];
@@ -92,6 +94,7 @@ export class ChunkLocatorService {
     this.embeddingStore = params.embeddingStore;
     this.dependencyAnalyzer = params.dependencyAnalyzer;
     this.anthropicService = params.anthropicService;
+    this.mistralService = params.mistralService;
     this.config = { ...DEFAULT_CONFIG, ...(params.config || {}) };
     this.activeSheetName = params.activeSheetName || null;
     this.chatHistory = params.chatHistory || [];
@@ -418,7 +421,15 @@ export class ChunkLocatorService {
       console.log(`%c Found ${availableSheets.length} sheets to analyze with LLM`, 'color: #3498db');
       
       // Use the Anthropic service to select relevant sheets
-      const selectedSheetNames = await this.anthropicService.selectRelevantSheets(
+      //uncomment this when anthropic is ready
+      //const selectedSheetNames = await this.anthropicService.selectRelevantSheets(
+      //  query,
+      //  availableSheets,
+      //  chatHistory
+      //);
+
+      // Use mistral to select relevant sheets
+      const selectedSheetNames = await this.mistralService.selectRelevantSheets(
         query,
         availableSheets,
         chatHistory

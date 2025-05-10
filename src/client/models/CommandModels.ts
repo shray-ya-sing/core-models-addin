@@ -147,6 +147,13 @@ export interface CompressedSheet {
     valueCount: number;
     emptyCount: number;
   };
+  cells?: {
+    address: string;
+    value: any;
+    formula?: string;
+    type: string;
+    format?: any;
+  }[];
 }
 
 /**

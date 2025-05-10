@@ -38,7 +38,7 @@ export class OpenAIClientService {
   private models = {
     [ModelType.Light]: 'gpt-3.5-turbo',
     [ModelType.Standard]: 'gpt-4o-mini',
-    [ModelType.Advanced]: 'gpt-4o-mini'
+    [ModelType.Advanced]: 'gpt-4.1-nano-2025-04-14'
   };
   
   /**
@@ -232,7 +232,7 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE
 When uncertain about any aspect, openly acknowledge limitations in your understanding rather than guessing.`;
         
         // For workbook explanations, we'll use GPT-4 which balances capability and speed
-        const modelToUse = this.models[ModelType.Standard];
+        const modelToUse = this.models[ModelType.Advanced];
         
         // Log the workbook context being sent to the LLM if verbose logging is enabled
         if (this.verboseLogging) {
@@ -324,6 +324,9 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
         });
         
         // Add chat history for context
+        // comment this out for now
+        console.log('chatHistory', chatHistory.slice(0, 0));
+        /*
         if (chatHistory && chatHistory.length > 0) {
           for (const msg of chatHistory) {
             if (msg.attachments && msg.attachments.length > 0) {
@@ -365,7 +368,7 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
             }
           }
         }
-        
+        */        
         // Add workbook context
         messages.push({
           role: 'user',
@@ -983,4 +986,355 @@ OPERATION SCHEMAS:
       // Additional validation could be added here based on operation type
     }
   }
+
+  /**
+   * Classify a query and decompose it into steps
+   * @param query The query to classify
+   * @param chatHistory Optional chat history to provide context
+   * @returns The classification result
+   */
+
+   public async classifyQueryAndDecompose(
+      query: string,
+      chatHistory: Array<{role: string, content: string, attachments?: Attachment[]}> = []
+    ): Promise<any> {
+      try {
+        // Create a powerful system prompt for query classification and decomposition
+        const systemPrompt = `You are a command classifier for an expert financial model assistant specialized in Excel workbooks. Your task is to analyze user queries, classify them, and decompose them into logical steps.
+  The chat history is only for reference, you have to decompose only the MOST RECENT QUERY FROM THE USER. DON"T INCLUDE PRIOR QUERIES IN YOUR CLASSIFICATION. 
+
+  CLASSIFICATION TYPES:
+  - greeting: ONLY pure greetings or pleasantries with no task, question or command intent (like "hello", "how are you?", etc.)
+  - workbook_question: Questions about the workbook that don't need KB access
+  - workbook_command: Commands to modify the workbook that don't need KB access
+  
+  OUTPUT FORMAT:
+  You must respond with a JSON object that follows this schema:
+  {
+    "query_type": string,  // The primary classification (one of the types above)
+    "steps": [             // Array of steps to execute (can be one or multiple)
+      {
+        "step_index": number,       // 0-based index of this step in sequence
+        "step_action": string,      // Short action description 
+        "step_specific_query": string, // The specific sub-query for this step
+        "step_type": string,        // Classification for this specific step
+        "depends_on": number[]      // Indices of steps this step depends on (can be empty)
+      }
+    ]
+  }
+  
+  EXAMPLES:
+  
+  Example 1 - Simple greeting:
+  User: "Hi there, how are you today?"
+  {
+    "query_type": "greeting",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Respond to greeting",
+        "step_specific_query": "Hi there, how are you today?",
+        "step_type": "greeting",
+        "depends_on": []
+      }
+    ]
+  }
+  
+  Example 2 - Simple workbook question:
+  User: "What's the total revenue in Q2 2023?"
+  {
+    "query_type": "workbook_question",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Analyze workbook for Q2 2023 revenue",
+        "step_specific_query": "What's the total revenue in Q2 2023?",
+        "step_type": "workbook_question",
+        "depends_on": []
+      }
+    ]
+  }
+  
+  Example 3 - KB-dependent question:
+  User: "How does our Q1 performance compare to the industry benchmarks?"
+  {
+    "query_type": "workbook_question_kb",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Retrieve industry benchmarks from KB",
+        "step_specific_query": "What are the industry benchmarks for Q1?",
+        "step_type": "workbook_question_kb",
+        "depends_on": []
+      },
+      {
+        "step_index": 1,
+        "step_action": "Compare workbook Q1 performance to benchmarks",
+        "step_specific_query": "Compare our Q1 performance to the industry benchmarks",
+        "step_type": "workbook_question",
+        "depends_on": [0]
+      }
+    ]
+  }
+  
+  Example 4 - Multi-step command:
+  User: "Update the revenue projections for 2024 using a 5% growth rate and create a bar chart showing the quarterly breakdown"
+  {
+    "query_type": "workbook_command",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Update revenue projections with 5% growth",
+        "step_specific_query": "Update the revenue projections for 2024 using a 5% growth rate",
+        "step_type": "workbook_command",
+        "depends_on": []
+      },
+      {
+        "step_index": 1,
+        "step_action": "Create quarterly revenue bar chart",
+        "step_specific_query": "Create a bar chart showing the quarterly breakdown of 2024 revenue",
+        "step_type": "workbook_command",
+        "depends_on": [0]
+      }
+    ]
+  }
+  
+  Example 5 - Command with KB dependency:
+  User: "Create a new sheet with competitive analysis using data from our knowledge base"
+  {
+    "query_type": "workbook_command_kb",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Retrieve competitive data from KB",
+        "step_specific_query": "Find competitive analysis data in knowledge base",
+        "step_type": "workbook_question_kb",
+        "depends_on": []
+      },
+      {
+        "step_index": 1,
+        "step_action": "Create new competitive analysis sheet",
+        "step_specific_query": "Create a new sheet with the competitive analysis data",
+        "step_type": "workbook_command",
+        "depends_on": [0]
+      }
+    ]
+  }
+
+  Example 6 - Workbook Question:
+  User: "What is the stock price calculated from the DCF and where do you find it?"
+  
+    {
+    "query_type": "workbook_question",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Analyze workbook for stock price",
+        "step_specific_query": "Determine the stock price calculated from the DCF analysis and its cell address",
+        "step_type": "workbook_question",
+        "depends_on": []
+      }
+    ]
+  }
+  Example 6 - Workbook Question:
+  User: "what is the circular logic in the relationships between the income statement, balance sheet and cash flow statement"
+  
+    {
+    "query_type": "workbook_question",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Analyze workbook for circular logic",
+        "step_specific_query": "Describe how the interdependencies among net income, cash balances, and equity create a circular relationship",
+        "step_type": "workbook_question",
+        "depends_on": []
+      }
+    ]
+  }ample 7 - Workbook Question with KB:
+  
+  Important rules:
+  1. Always use the most specific query_type that applies
+  2. Decompose complex queries into logical steps
+  3. Use the depends_on field to show dependencies between steps
+  4. Keep step_action descriptions concise but clear
+  5. Make step_specific_query suitable for direct execution by the appropriate handler
+  6. IMPORTANT: Do NOT classify a query as a greeting if it contains a greeting word but also includes a question or command. For example, "Hi, what's the total revenue?" should be classified as workbook_question, not greeting
+  7. Only classify as greeting if the SOLE intent is a greeting with no task
+  8. Don't break down simple questions or commands into more than one step. Try to keep it to as few steps as possible. 
+
+  ANTI-PATTERNS TO AVOID:
+  1. DO NOT respond with "I'll analyze this query" or "I'll classify this as..."
+  2. DO NOT include any explanatory text before or after the JSON
+  4. DO NOT include phrases like "Here's the classification" or "Here's the JSON"
+  5. DO NOT respond with "I understand you want me to..."
+  6. DO NOT acknowledge the request in natural language
+  7. NEVER respond with anything other than the raw JSON object
+  8. NEVER create redundant steps that simply repeat prior steps. Don't be too atomic in your approach. Aim to condense workbook explanations into one step.
+
+  
+  YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT WITH NO OTHER TEXT.
+  YOU ARE NOT RESPONDING TO A HUMAN. YOUR RESPONSE WILL ONLY BE SEEN BY AN INTERNAL PROCESSOR THAT EXPECTS RAW JSON.
+  IF YOU ADD ANY TEXT BEFORE OR AFTER THE JSON, THE SYSTEM WILL BREAK.
+  
+  EXAMPLE OF CORRECT RESPONSE:
+  {"query_type":"workbook_command","steps":[{"step_index":0,"step_action":"Update data","step_specific_query":"Update cell A1","step_type":"workbook_command","depends_on":[]}]}
+  
+  EXAMPLE OF INCORRECT RESPONSE:
+  
+  I'll classify this query for you. Here's the JSON:
+  {"query_type":"workbook_command","steps":[{"step_index":0,"step_action":"Update data","step_specific_query":"Update cell A1","step_type":"workbook_command","depends_on":[]}]}`;
+  
+      // Use Sonnet for classification (most capable model)
+      const modelToUse = this.models[ModelType.Advanced];
+      
+      // Prepare the messages array with chat history and the current query
+      let messages = [];
+      
+      // First add a system message explaining the conversation context
+      if (chatHistory.length > 0) {
+        // Filter out system messages and limit to last 10 messages to avoid token limits
+        // Anthropic API doesn't accept 'system' role in the messages array - only as a top-level parameter
+        const recentHistory = chatHistory
+          .filter(msg => msg.role !== 'system')
+          .slice(-10);
+        
+        if (this.debugMode) {
+          console.log('Filtered chat history:', recentHistory.length, 'of', chatHistory.length, 'messages');
+        }
+        
+        messages = [...messages, ...recentHistory];
+      }
+      
+      // Add the current query
+      messages.push({
+        role: 'user' as const,
+        content: query
+      });
+      
+      if (this.debugMode) {
+        console.log('Chat history length:', chatHistory.length);
+        console.log('Total messages for classification:', messages.length);
+      }
+      
+      // For debugging
+      if (this.debugMode) {
+        console.log('Query Classification Request:', {
+          model: modelToUse,
+          query: query.substring(0, 50) + (query.length > 50 ? '...' : '')
+        });
+      }
+
+      try {
+        // Call the API to get the classification using OpenAI format
+        const response = await this.openai.chat.completions.create({
+          model: modelToUse,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...this.cleanMessagesForAPI(messages)
+          ],
+          max_tokens: 2000,
+          temperature: 0.2, // Low temperature for more deterministic classification
+          response_format: { type: 'json_object' } // Ensure JSON response
+        });
+        
+        // Extract the classification result
+        let responseContent = response.choices[0]?.message?.content || '{"query_type":"unknown","steps":[]}';
+        
+        if (this.debugMode) {
+          console.log('Raw response content:', responseContent);
+        }
+        
+        // Handle the response content properly
+        let classification;
+        
+        try {
+          // First try to parse it directly as JSON
+          classification = JSON.parse(responseContent);
+        } catch (parseError) {
+          // If direct parsing fails, try to extract JSON from markdown
+          try {
+            // Extract JSON if it's wrapped in a markdown code block
+            const extractedJson = this.extractJsonFromMarkdown(responseContent);
+            
+            // If we got a string back, parse it; otherwise use the extracted object
+            classification = typeof extractedJson === 'string' 
+              ? JSON.parse(extractedJson) 
+              : extractedJson;
+              
+            if (!classification || typeof classification !== 'object') {
+              // Fallback to a default classification if we couldn't parse anything
+              classification = {"query_type":"workbook_question","steps":[{
+                "step_index": 0,
+                "step_action": "Answer workbook question",
+                "step_specific_query": query,
+                "step_type": "workbook_question",
+                "depends_on": []
+              }]};
+            }
+          } catch (extractError) {
+            console.error('Error extracting JSON from response:', extractError);
+            // Fallback to a default classification
+            classification = {"query_type":"workbook_question","steps":[{
+              "step_index": 0,
+              "step_action": "Answer workbook question",
+              "step_specific_query": query,
+              "step_type": "workbook_question",
+              "depends_on": []
+            }]};
+          }
+        }
+        
+        if (this.debugMode) {
+          console.log('Query Classification Result:', classification);
+        }
+        
+        return classification;
+        
+      } catch (error) {
+        console.error('Error classifying query:', error);
+        throw this.handleApiError(error);
+      }
+    }
+    catch (error) {
+      console.error('Error classifying query:', error);
+      throw this.handleApiError(error);
+    }
+  }
+
+    /**
+ * Clean and format messages for the OpenAI API
+ * @param messages Array of message objects to clean
+ * @returns Properly formatted messages for OpenAI API
+ */
+private cleanMessagesForAPI(messages: Array<{role: string, content: string, attachments?: Attachment[]}>): any[] {
+  return messages.map(msg => {
+    // Handle messages with attachments (for multimodal models)
+    if (msg.attachments && msg.attachments.length > 0) {
+      return {
+        role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
+        content: [
+          { type: 'text', text: msg.content },
+          ...msg.attachments.map(attachment => {
+            if (attachment.type === 'image') {
+              return {
+                type: 'image_url',
+                image_url: {
+                  url: attachment.content,
+                  detail: 'high'
+                }
+              };
+            }
+            return null;
+          }).filter(Boolean)
+        ]
+      };
+    }
+    
+    // Handle regular text messages
+    return {
+      role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
+      content: msg.content
+    };
+  });
+}
 }

@@ -19,6 +19,13 @@ interface ProcessedSheetData {
     emptyCount: number;
   };
   anchors?: any[];
+  cells?: {
+    address: string;   // Cell address in A1 notation
+    value: any;        // Cell value
+    formula?: string;  // Formula if present
+    type: string;      // Data type
+    format?: any;      // Format information if available
+  }[];
 }
 
 /**
@@ -76,7 +83,7 @@ export class SpreadsheetChunkCompressor {
     // Basic sheet info
     const compressedSheet: CompressedSheet = {
       name: sheet.name,
-      summary: `Sheet ${sheet.name} with ${sheet.values ? sheet.values.length : 0} rows`
+      summary: `Sheet ${sheet.name} with ${sheet.values ? sheet.values.length : 0} rows`,
     };
     
     // Process sheet data to extract key information and metrics
@@ -88,6 +95,12 @@ export class SpreadsheetChunkCompressor {
     // Add anchors if present
     if (processedData.anchors && processedData.anchors.length > 0) {
       compressedSheet.anchors = processedData.anchors;
+    }
+    
+    // Add detailed cell data if present
+    if (processedData.cells && processedData.cells.length > 0) {
+      compressedSheet.cells = processedData.cells;
+      console.log(`Added ${processedData.cells.length} detailed cell records to sheet ${sheet.name}`);
     }
     
     // Add tables if present
@@ -257,6 +270,13 @@ export class SpreadsheetChunkCompressor {
     };
     
     const anchors: any[] = [];
+    const cells: {
+      address: string;
+      value: any;
+      formula?: string;
+      type: string;
+      format?: any;
+    }[] = [];
     
     // Process all cells to extract key information
     if (sheet.values && Array.isArray(sheet.values)) {
@@ -265,6 +285,9 @@ export class SpreadsheetChunkCompressor {
         const formulaRow = (sheet.formulas && Array.isArray(sheet.formulas) && sheet.formulas[row]) 
                           ? sheet.formulas[row] 
                           : [];
+        const formatRow = (sheet.formats && Array.isArray(sheet.formats) && sheet.formats[row])
+                          ? sheet.formats[row]
+                          : [];
         
         metrics.columnCount = Math.max(metrics.columnCount, valueRow.length);
         
@@ -272,14 +295,24 @@ export class SpreadsheetChunkCompressor {
           try {
             const value = valueRow[col];
             const formula = formulaRow[col];
+            const format = formatRow[col];
+            const cellAddress = this.columnToLetter(col) + (row + 1);
             
             // Only process formula if it's a valid string
             if (formula && typeof formula === 'string' && formula.trim().startsWith('=')) {
               metrics.formulaCount++;
               
-              // Add important formulas as anchors
+              // Store all formulas in the cells array
+              cells.push({
+                address: cellAddress,
+                value: value,
+                formula: formula,
+                type: 'formula',
+                format: format
+              });
+              
+              // Add important formulas as anchors for backward compatibility
               if (this.isKeyFormula(formula)) {
-                const cellAddress = this.columnToLetter(col) + (row + 1);
                 anchors.push({
                   cell: cellAddress,
                   value: formula,
@@ -289,13 +322,23 @@ export class SpreadsheetChunkCompressor {
             } else if (value !== undefined && value !== null && value !== '') {
               metrics.valueCount++;
               
-              // Add important values as anchors
+              // Store all non-empty cells in the cells array
+              const valueType = typeof value;
+              const processedValue = valueType === 'object' ? JSON.stringify(value) : value;
+              
+              cells.push({
+                address: cellAddress,
+                value: processedValue,
+                type: valueType,
+                format: format
+              });
+              
+              // Add important values as anchors for backward compatibility
               if (this.isKeyValue(value)) {
-                const cellAddress = this.columnToLetter(col) + (row + 1);
                 anchors.push({
                   cell: cellAddress,
-                  value: typeof value === 'object' ? JSON.stringify(value) : value,
-                  type: typeof value
+                  value: processedValue,
+                  type: valueType
                 });
               }
             } else {
@@ -308,11 +351,19 @@ export class SpreadsheetChunkCompressor {
         }
       }
     }
-    // Add anchors if any were found
-    if (anchors.length > 0) {
-      return { metrics, anchors };
+    
+    // Return both cells and anchors
+    const result: ProcessedSheetData = { metrics };
+    
+    if (cells.length > 0) {
+      result.cells = cells;
     }
-    return { metrics };
+    
+    if (anchors.length > 0) {
+      result.anchors = anchors;
+    }
+    
+    return result;
   }
   
   /**

@@ -207,12 +207,15 @@ export class RangeDependencyAnalyzer {
       result.add(current);
       
       // Add dependencies to queue
+      // Comment this out for now
+      /*
       const dependencies = this.getDependencyChunks(current);
       for (const dependency of dependencies) {
         if (!result.has(dependency)) {
           queue.push(dependency);
         }
       }
+      */
     }
     
     // Remove the original chunks from the result

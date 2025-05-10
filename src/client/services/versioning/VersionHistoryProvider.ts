@@ -134,11 +134,6 @@ export class VersionHistoryProvider {
         
         console.log(`Worksheet activated: ${worksheet.name}`);
         
-        // When a worksheet is activated, check if we need to refresh its images
-        if (this.currentWorkbookId) {
-          // Refresh the images for this sheet if it's not already in progress
-          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
-        }
       });
     } catch (error) {
       console.error('Error handling worksheet activation:', error);
@@ -158,11 +153,6 @@ export class VersionHistoryProvider {
         
         console.log(`Data changed in worksheet: ${worksheet.name}`);
         
-        // When data changes in a worksheet, check if we need to refresh its images
-        if (this.currentWorkbookId) {
-          // Refresh the images for this sheet
-          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
-        }
       });
     } catch (error) {
       console.error('Error handling worksheet data change:', error);
@@ -178,11 +168,6 @@ export class VersionHistoryProvider {
         const worksheet = context.workbook.worksheets.getActiveWorksheet();
         worksheet.load('name');
         await context.sync();
-        
-        // If we have a current workbook ID, refresh the images for this sheet
-        if (this.currentWorkbookId) {
-          await multimodalAnalysisService.refreshSheetImages(this.currentWorkbookId, worksheet.name);
-        }
       });
     } catch (error) {
       console.error('Error checking for formatting changes:', error);
