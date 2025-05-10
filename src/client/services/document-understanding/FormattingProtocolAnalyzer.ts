@@ -2,10 +2,10 @@
  * Formatting Protocol Analyzer for Excel workbooks
  * Facade that coordinates formatting metadata extraction and LLM analysis
  */
-import { ClientAnthropicService, ModelType } from '../ClientAnthropicService';
+import { ClientAnthropicService, ModelType } from '../llm/ClientAnthropicService';
 import { FormattingMetadataExtractor } from './FormattingMetadataExtractor';
 import { FormattingProtocol, WorkbookFormattingMetadata } from './FormattingModels';
-import { ExcelImageService } from '../ExcelImageService';
+import { ExcelImageService } from './ExcelImageService';
 
 /**
  * Regular expression to validate base64 strings
@@ -456,7 +456,7 @@ export class FormattingProtocolAnalyzer {
       // Add formatting metadata
       const metadataMessage = {
         type: 'text',
-        text: `Formatting Metadata:\n\`\`\`json\n${JSON.stringify(formattingMetadata, null, 2)}\n\`\`\`\n\nPlease analyze the images and metadata to identify the formatting protocol used in this workbook. Follow the schema provided in the system prompt.`
+        text: `Formatting Metadata:\n\`\`\`json\n${JSON.stringify(formattingMetadata, null, 2)}\n\`\`\`\n\nPlease analyze ${images.length > 0 ? 'the images and' : 'the'} metadata to identify the formatting protocol used in this workbook. Follow the schema provided in the system prompt.`
       };
       
       return {
@@ -479,6 +479,12 @@ export class FormattingProtocolAnalyzer {
     try {
       // Prepare message with images and formatting metadata
       const messageData = await this.prepareFormattingProtocolMessage();
+      
+      // Check if we have any images in the message
+      const hasImages = messageData.messages.some(msg => msg.type === 'image');
+      if (!hasImages) {
+        console.warn('No images available for formatting protocol analysis. Proceeding with metadata only.');
+      }
       
       // Try with Anthropic first (up to 2 retries)
       let formattingProtocol: FormattingProtocol | null = null;

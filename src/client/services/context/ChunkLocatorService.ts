@@ -1,8 +1,8 @@
-import { MetadataChunk } from '../models/CommandModels';
-import { ClientAnthropicService } from './ClientAnthropicService';
+import { MetadataChunk } from '../../models/CommandModels';
+import { ClientAnthropicService } from '../llm/ClientAnthropicService';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';
 import { RangeDependencyAnalyzer } from './RangeDependencyAnalyzer';
-import { ChatHistoryMessage } from './ClientQueryProcessor';
+import { ChatHistoryMessage } from '../request-processing/ClientQueryProcessor';
 
 // Forward declarations for EmbeddingStore which will be implemented later
 export type EmbeddingVector = number[];

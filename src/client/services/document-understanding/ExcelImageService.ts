@@ -6,7 +6,7 @@ declare const Excel: any;
 declare const Office: any;
 
 // Import the utility function for creating a formula-free workbook copy
-import { createFormulaFreeWorkbookCopy } from './document-understanding/WorkbookUtils';
+import { createFormulaFreeWorkbookCopy } from './WorkbookUtils';
 
 /**
  * Regular expression to validate base64 strings
@@ -167,12 +167,17 @@ export class ExcelImageService {
             }
             
             // Call the Excel Image API to capture the worksheet
-            // If this fails, it will throw an error and be caught by the catch block
+            // This will return null if there's an error instead of throwing
             const imageBase64 = await this.callExcelImageApi(worksheet.name);
             
-            // At this point, the image should be valid since callExcelImageApi validates it
-            images.push(imageBase64);
-            console.log(`Successfully captured image for worksheet: ${worksheet.name}`);
+            // Only add to images array if we got a valid result
+            if (imageBase64) {
+              images.push(imageBase64);
+              console.log(`Successfully captured image for worksheet: ${worksheet.name}`);
+            } else {
+              console.warn(`Failed to capture image for worksheet: ${worksheet.name}`);
+              skippedWorksheets.push(worksheet.name);
+            }
           } catch (worksheetError) {
             // Log the error and continue with the next worksheet
             console.error(`Error capturing image for worksheet ${worksheet.name}:`, worksheetError);
@@ -221,7 +226,7 @@ export class ExcelImageService {
    * @param worksheetName The name of the worksheet to capture
    * @returns Promise with a base64-encoded image
    */
-  private async callExcelImageApi(worksheetName: string): Promise<string> {
+  private async callExcelImageApi(worksheetName: string): Promise<string | null> {
     try {
       console.log(`Capturing image for worksheet: ${worksheetName}`);
       
@@ -264,13 +269,14 @@ export class ExcelImageService {
         clearTimeout(healthTimeoutId);
         
         if (!healthCheck.ok) {
-          throw new Error(`API health check failed with status: ${healthCheck.status}`);
+          console.warn(`API health check failed with status: ${healthCheck.status}`);
+          return null;
         }
         
         console.log('API health check successful, proceeding with image conversion');
       } catch (healthError) {
         console.warn(`API health check failed: ${healthError.message}`);
-        throw new Error(`Excel Image API unavailable: ${healthError.message}`);
+        return null;
       }
       
       // Send to API endpoint for image conversion with timeout
@@ -300,7 +306,8 @@ export class ExcelImageService {
           console.error('Could not read error details:', textError);
         }
         
-        throw new Error(`Excel Image API returned error: ${response.status} ${response.statusText}${errorDetails ? ` - ${errorDetails}` : ''}`);
+        console.error(`Excel Image API returned error: ${response.status} ${response.statusText}${errorDetails ? ` - ${errorDetails}` : ''}`);
+        return null;
       }
       
       console.log(`Received successful response from Excel Image API for worksheet: ${worksheetName}`);
@@ -312,12 +319,12 @@ export class ExcelImageService {
       // The API should return an array of base64 strings
       if (!Array.isArray(result)) {
         console.error('Unexpected response format - not an array:', typeof result);
-        throw new Error('Unexpected API response format. Expected an array of base64 strings.');
+        return null;
       }
       
       if (result.length === 0) {
         console.error('API returned empty array of images');
-        throw new Error('No images returned from the API.');
+        return null;
       }
       
       // Get the first image from the array
@@ -329,13 +336,14 @@ export class ExcelImageService {
       
       // Validate the base64 image before returning it
       if (!this.isValidBase64PngImage(imageBase64)) {
-        throw new Error(`Invalid base64 PNG image returned for worksheet: ${worksheetName}`);
+        console.error(`Invalid base64 PNG image returned for worksheet: ${worksheetName}`);
+        return null;
       }
       
       return imageBase64;
     } catch (error) {
       console.error(`Error calling Excel Image API for worksheet ${worksheetName}:`, error);
-      throw error;
+      return null;
     }
   }
   

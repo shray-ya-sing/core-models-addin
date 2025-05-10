@@ -2,7 +2,7 @@
  * Analyzer for formula dependencies between sheets and ranges
  * Used to build a dependency graph for targeted workbook state capture
  */
-import { MetadataChunk } from '../models/CommandModels';
+import { MetadataChunk } from '../../models/CommandModels';
 
 /**
  * Represents a dependency graph between different chunks of workbook data

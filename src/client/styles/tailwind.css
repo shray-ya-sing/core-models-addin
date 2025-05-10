@@ -23,6 +23,31 @@
   border: 1px solid rgba(76, 194, 255, 0.15);
 }
 
+/* Fix for numbered lists */
+.fix-numbered-lists ol {
+  counter-reset: item;
+  list-style-type: none !important;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+.fix-numbered-lists ol > li {
+  counter-increment: item;
+  display: flex !important;
+  align-items: flex-start !important;
+  margin-bottom: 0.25em !important;
+  position: relative !important;
+}
+
+.fix-numbered-lists ol > li::before {
+  content: counter(item) ".";
+  display: inline-block;
+  width: 1.5em;
+  margin-right: 0.5em;
+  text-align: right;
+  font-weight: normal;
+}
+
 /* Custom responsive font classes */
 .responsive-text {
   font-size: calc(0.7rem + 0.4vw);

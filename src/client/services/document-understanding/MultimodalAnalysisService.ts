@@ -5,7 +5,7 @@
 import { performMultimodalAnalysis } from './WorkbookUtils';
 import { FormattingProtocolAnalyzer } from './FormattingProtocolAnalyzer';
 import { FormattingProtocol, WorkbookFormattingMetadata } from './FormattingModels';
-import { ClientAnthropicService } from '../ClientAnthropicService';
+import { ClientAnthropicService } from '../llm/ClientAnthropicService';
 
 // Types for the multimodal analysis options
 export interface MultimodalAnalysisOptions {
@@ -257,8 +257,14 @@ export class MultimodalAnalysisService {
     }
   }
   
+  // Flag to track if a formatting analysis is currently in progress
+  private isFormattingAnalysisInProgress = false;
+  
+  // Promise for the current formatting analysis
+  private currentFormattingAnalysisPromise: Promise<FormattingProtocol> | null = null;
+  
   /**
-   * Analyzes the formatting protocol of the active workbook
+   * Analyzes the formatting protocol of the active workbook without blocking the main flow
    * @returns Promise with the formatting protocol analysis
    */
   public async analyzeFormattingProtocol(): Promise<FormattingProtocol> {
@@ -269,65 +275,198 @@ export class MultimodalAnalysisService {
         return this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingProtocol;
       }
       
-      // For backward compatibility, also check the legacy cache
-      if (this.cachedFormattingProtocol && this.isFormattingProtocolValid()) {
-        console.log('Using legacy cached formatting protocol');
-        return this.cachedFormattingProtocol;
+      // If there's already an analysis in progress, return a basic protocol immediately
+      // This prevents blocking the main flow while still allowing the analysis to complete in the background
+      if (this.isFormattingAnalysisInProgress) {
+        console.log('Formatting analysis already in progress, returning basic protocol');
+        return this.getBasicFormattingProtocol();
       }
       
+      // Start the analysis in the background and return a basic protocol immediately
+      this.startFormattingAnalysisInBackground();
+      
+      // Return a basic protocol to avoid blocking the main flow
+      return this.getBasicFormattingProtocol();
+    } catch (error) {
+      console.error('Error in analyzeFormattingProtocol:', error);
+      return this.getBasicFormattingProtocol();
+    }
+  }
+  
+  /**
+   * Starts the formatting analysis process in the background
+   * This method doesn't block and allows the main flow to continue
+   */
+  private startFormattingAnalysisInBackground(): void {
+    // If there's already an analysis in progress, don't start another one
+    if (this.isFormattingAnalysisInProgress) {
+      return;
+    }
+    
+    // Set the flag to indicate that an analysis is in progress
+    this.isFormattingAnalysisInProgress = true;
+    
+    // Start the analysis in the background
+    this.currentFormattingAnalysisPromise = this.performFormattingAnalysis();
+    
+    // When the analysis completes, update the cache and reset the flag
+    this.currentFormattingAnalysisPromise
+      .then(formattingProtocol => {
+        // Store the results in the cache
+        if (this.currentWorkbookId) {
+          this.workbookFormattingProtocols.set(this.currentWorkbookId, {
+            formattingProtocol,
+            formattingMetadata: this.cachedFormattingMetadata || this.getDefaultFormattingMetadata(),
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Update the legacy cache
+        this.cachedFormattingProtocol = formattingProtocol;
+        this.lastAnalysisTimestamp = new Date().toISOString();
+        
+        console.log('Background formatting analysis completed successfully');
+      })
+      .catch(error => {
+        console.error('Error in background formatting analysis:', error);
+      })
+      .finally(() => {
+        // Reset the flag and promise
+        this.isFormattingAnalysisInProgress = false;
+        this.currentFormattingAnalysisPromise = null;
+      });
+  }
+  
+  /**
+   * Performs the actual formatting analysis
+   * This method is called by startFormattingAnalysisInBackground and runs asynchronously
+   * @returns Promise with the formatting protocol analysis
+   */
+  private async performFormattingAnalysis(): Promise<FormattingProtocol> {
+    try {
       console.log(`Analyzing formatting protocol for workbook: ${this.currentWorkbookId}`);
       
       // Step 1: Extract formatting metadata (this doesn't require the API)
       const formattingMetadata = await this.formattingProtocolAnalyzer.extractFormattingMetadata();
       console.log('Successfully extracted formatting metadata');
       
+      // Store the metadata in the cache immediately
+      this.cachedFormattingMetadata = formattingMetadata;
+      
       // Step 2: Get workbook images for all sheets
       const worksheetNames = await this.getAllWorksheetNames();
       console.log(`Requesting images for all ${worksheetNames.length} sheets in workbook`);
       
       // Request images for all sheets explicitly
-      // We now require the API to be available - no fallback to placeholder images
-      const images = await performMultimodalAnalysis(this.apiEndpoint, {
-        sheets: worksheetNames
-      });
-      console.log(`Successfully retrieved ${images.length} images for analysis`);
-      
-      // Step 3: Analyze formatting protocol using the LLM
-      // In our refactored implementation, the analyzeFormattingProtocol method handles images and metadata internally
-      const formattingProtocol = await this.formattingProtocolAnalyzer.analyzeFormattingProtocol();
-      
-      // Step 4: Store in the workbook-specific cache
-      if (this.currentWorkbookId) {
-        this.workbookFormattingProtocols.set(this.currentWorkbookId, {
-          formattingProtocol,
-          formattingMetadata,
-          timestamp: new Date().toISOString()
+      let images: string[] = [];
+      try {
+        // Use a timeout to prevent this from hanging indefinitely
+        const imagePromise = performMultimodalAnalysis(this.apiEndpoint, {
+          sheets: worksheetNames
         });
+        
+        // Set a timeout of 30 seconds for the image retrieval
+        const timeoutPromise = new Promise<string[]>((_, reject) => {
+          setTimeout(() => reject(new Error('Image retrieval timed out')), 30000);
+        });
+        
+        // Race the image retrieval against the timeout
+        images = await Promise.race([imagePromise, timeoutPromise]);
+        console.log(`Successfully retrieved ${images.length} images for analysis`);
+      } catch (imageError) {
+        console.warn('Error retrieving workbook images:', imageError);
+        // Continue with analysis using just the metadata
+        images = [];
       }
       
-      // Also update the legacy cache for backward compatibility
-      this.cachedFormattingProtocol = formattingProtocol;
-      this.cachedFormattingMetadata = formattingMetadata;
-      this.lastAnalysisTimestamp = new Date().toISOString();
+      // Step 3: Analyze formatting protocol using the LLM
+      // Even if we couldn't get images, we can still analyze the metadata
+      const formattingProtocol = await this.formattingProtocolAnalyzer.analyzeFormattingProtocol();
       
-      // Store in analysis results for backward compatibility
-      const analysisId = `formatting_protocol_${Date.now()}`;
-      this.analysisResults.set(analysisId, {
-        images,
-        formattingAnalysis: formattingProtocol,
-        formattingMetadata,
-        metadata: {
-          timestamp: this.lastAnalysisTimestamp,
-          sheetCount: formattingMetadata.sheets.length
-        }
-      });
-      
-      console.log(`Formatting protocol analysis complete for workbook: ${this.currentWorkbookId}`);
       return formattingProtocol;
     } catch (error) {
-      console.error('Error analyzing formatting protocol:', error);
-      throw error;
+      console.error('Error in performFormattingAnalysis:', error);
+      return this.getBasicFormattingProtocol();
     }
+  }
+  
+  /**
+   * Returns a basic formatting protocol to use when no cached protocol is available
+   * or when an error occurs during analysis
+   * @returns A basic formatting protocol
+   */
+  private getBasicFormattingProtocol(): FormattingProtocol {
+    return {
+      colorCoding: {
+        inputs: '#f5f5f5',
+        calculations: '#ffffff',
+        headers: '#d0d0d0',
+        totals: '#e0e0e0',
+        custom: {}
+      },
+      numberFormatting: {
+        currency: '$#,##0.00',
+        percentage: '0.00%',
+        date: 'mm/dd/yyyy',
+        custom: {}
+      },
+      borderStyles: {
+        tables: 'thin solid black',
+        totals: 'medium solid black',
+        custom: {}
+      },
+      fontUsage: {
+        headers: {
+          bold: true
+        },
+        body: {
+          name: 'Arial'
+        }
+      },
+      tableFormatting: {
+        headerRow: {
+          fontBold: true
+        }
+      },
+      scheduleFormatting: {},
+      workbookStructure: {},
+      scenarioFormatting: {},
+      chartFormatting: {
+        chartTypes: {
+          preferred: ['line', 'column', 'pie']
+        },
+        title: {
+          hasTitle: true
+        },
+        legend: {
+          position: 'right'
+        }
+      }
+    };
+  }
+  
+  /**
+   * Returns default formatting metadata to use when no cached metadata is available
+   * @returns A basic WorkbookFormattingMetadata object with default values
+   */
+  private getDefaultFormattingMetadata(): WorkbookFormattingMetadata {
+    return {
+      themeColors: {
+        background1: '#FFFFFF',
+        background2: '#F2F2F2',
+        text1: '#000000',
+        text2: '#666666',
+        accent1: '#4472C4',
+        accent2: '#ED7D31',
+        accent3: '#A5A5A5',
+        accent4: '#FFC000',
+        accent5: '#5B9BD5',
+        accent6: '#70AD47',
+        hyperlink: '#0563C1',
+        followedHyperlink: '#954F72'
+      },
+      sheets: []
+    };
   }
   
   /**

@@ -1,8 +1,8 @@
 // src/client/services/ClientExcelCommandAdapter.ts
 // Adapter that connects the Command system to the Excel Operations DSL
 
-import { Command, Operation, OperationType } from '../models/CommandModels';
-import { ExcelOperation } from '../models/ExcelOperationModels';
+import { Command, Operation, OperationType } from '../../models/CommandModels';
+import { ExcelOperation } from '../../models/ExcelOperationModels';
 import { ClientExcelCommandInterpreter } from './ClientExcelCommandInterpreter';
 
 /**

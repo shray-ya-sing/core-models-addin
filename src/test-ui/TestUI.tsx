@@ -4,8 +4,8 @@
  */
 import * as React from "react";
 import { useState, useEffect } from "react";
-import { ClientQueryProcessor } from "../client/services/ClientQueryProcessor";
-import { ClientExcelCommandInterpreter } from "../client/services/ClientExcelCommandInterpreter";
+import { ClientQueryProcessor } from "../client/services/request-processing/ClientQueryProcessor";
+import { ClientExcelCommandInterpreter } from "../client/services/actions/ClientExcelCommandInterpreter";
 import { TestRunner } from "../../tests/e2e_tests/TestRunner";
 import { AllTestScenarios, TestResult, TestScenario } from "../../tests/e2e_tests/AllTestScenarios";
 

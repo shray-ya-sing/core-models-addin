@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { CommandStatus } from '../models/CommandModels';
-import { ChatHistoryMessage } from './ClientQueryProcessor';
+import { CommandStatus } from '../../models/CommandModels';
+import { ChatHistoryMessage } from '../request-processing/ClientQueryProcessor';
 
 /**
  * Attachment type for multimodal messages
@@ -88,6 +88,176 @@ export class ClientAnthropicService {
   public getClient(): Anthropic {
     return this.anthropic;
   }
+  
+  /**
+   * Generate a quick response using a lightweight model
+   * Optimized for fast generation of short responses like progress messages
+   * @param prompt The prompt to generate a response for
+   * @param options Optional parameters like temperature and max_tokens
+   * @param streamHandler Optional handler for streaming responses
+   * @returns The generated response
+   */
+  public async generateQuickResponse(
+    prompt: string,
+    options?: { temperature?: number; max_tokens?: number },
+    streamHandler?: (chunk: string) => void
+  ): Promise<any> {
+    try {
+      // Use the lightweight model for faster responses
+      const modelToUse = this.models[ModelType.Light];
+      
+      // Set default options
+      const temperature = options?.temperature ?? 0.7;
+      const maxTokens = options?.max_tokens ?? 100;
+      
+      // Create a simple system prompt
+      const systemPrompt = "You are Cori, a helpful assistant. Keep your responses brief and conversational.";
+      
+      // Create a simple message array
+      const messages = [{
+        role: 'user' as const,
+        content: prompt
+      }];
+      
+      // Check if we should stream the response
+      if (streamHandler) {
+        // For streaming responses
+        let fullResponse = '';
+        let responseId = uuidv4();
+        
+        const stream = await this.anthropic.messages.create({
+          model: modelToUse,
+          messages: this.cleanMessagesForAPI(messages),
+          system: systemPrompt,
+          max_tokens: maxTokens,
+          temperature: temperature,
+          stream: true,
+        });
+        
+        // Process the stream
+        for await (const chunk of stream) {
+          if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
+            const textChunk = chunk.delta?.text || '';
+            fullResponse += textChunk;
+            streamHandler(textChunk);
+          }
+        }
+        
+        return {
+          id: responseId,
+          assistantMessage: fullResponse,
+          command: null,
+          rawResponse: null
+        };
+      } else {
+        // For non-streaming responses
+        const response = await this.anthropic.messages.create({
+          model: modelToUse,
+          messages: this.cleanMessagesForAPI(messages),
+          system: systemPrompt,
+          max_tokens: maxTokens,
+          temperature: temperature
+        });
+        
+        // Extract the response text
+        const responseText = response.content?.[0]?.type === 'text' 
+          ? response.content[0].text 
+          : '';
+        
+        return {
+          id: response.id,
+          assistantMessage: responseText,
+          command: null,
+          rawResponse: this.debugMode ? response : undefined
+        };
+      }
+    } catch (error) {
+      console.error('Error generating quick response:', error);
+      
+      // If OpenAI is available, try using it as a fallback
+      if (this.openai) {
+        try {
+          console.log('🔄 Falling back to OpenAI for quick response...');
+          
+          if (streamHandler) {
+            // Stream from OpenAI
+            const stream = await this.openai.chat.completions.create({
+              model: 'gpt-4.1-nano-2025-04-14',
+              messages: [
+                { role: 'system', content: "You are Cori, a helpful assistant. Keep your responses brief and conversational." },
+                { role: 'user', content: prompt }
+              ],
+              temperature: options?.temperature ?? 0.7,
+              max_tokens: options?.max_tokens ?? 100,
+              stream: true
+            });
+            
+            let fullResponse = '';
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || '';
+              if (content) {
+                fullResponse += content;
+                streamHandler(content);
+              }
+            }
+            
+            return {
+              id: uuidv4(),
+              assistantMessage: fullResponse,
+              command: null,
+              rawResponse: undefined
+            };
+          } else {
+            // Non-streaming from OpenAI
+            const response = await this.openai.chat.completions.create({
+              model: 'gpt-4.1-nano-2025-04-14',
+              messages: [
+                { role: 'system', content: "You are Cori, a helpful assistant. Keep your responses brief and conversational." },
+                { role: 'user', content: prompt }
+              ],
+              temperature: options?.temperature ?? 0.7,
+              max_tokens: options?.max_tokens ?? 100
+            });
+            
+            return {
+              id: response.id,
+              assistantMessage: response.choices[0]?.message?.content || '',
+              command: null,
+              rawResponse: undefined
+            };
+          }
+        } catch (fallbackError) {
+          console.error('OpenAI fallback also failed:', fallbackError);
+          throw error; // Throw the original error
+        }
+      }
+      
+      throw error;
+    }
+  }
+  
+  /**
+   * Clean messages before sending to Anthropic API
+   * Removes UI-specific properties like isStreaming that aren't supported by the API
+   * @param messages Array of messages to clean
+   * @returns Cleaned messages array suitable for API
+   */
+  private cleanMessagesForAPI(messages: any[]): any[] {
+    return messages.map(msg => {
+      // Only keep properties that Anthropic API accepts
+      const cleanMsg: any = {
+        role: msg.role,
+        content: msg.content
+      };
+      
+      // Only include attachments if they exist
+      if (msg.attachments && msg.attachments.length > 0) {
+        cleanMsg.attachments = msg.attachments;
+      }
+      
+      return cleanMsg;
+    });
+  }
 
   /**
    * Simple chat completion for basic queries like greetings
@@ -170,7 +340,7 @@ export class ClientAnthropicService {
         
         const stream = await this.anthropic.messages.create({
           model: modelToUse,
-          messages: messages as any, // Type assertion to resolve SDK type issue
+          messages: this.cleanMessagesForAPI(messages), // Clean messages before sending to API
           system: systemPrompt, // Add system prompt as a top-level parameter
           max_tokens: 1000,  // Shorter for chat responses
           temperature: 0.7,
@@ -286,9 +456,7 @@ export class ClientAnthropicService {
 CLASSIFICATION TYPES:
 - greeting: ONLY pure greetings or pleasantries with no task, question or command intent (like "hello", "how are you?", etc.)
 - workbook_question: Questions about the workbook that don't need KB access
-- workbook_question_kb: Questions about the workbook that require KB access
 - workbook_command: Commands to modify the workbook that don't need KB access
-- workbook_command_kb: Commands to modify the workbook that require KB access
 
 OUTPUT FORMAT:
 You must respond with a JSON object that follows this schema:
@@ -487,7 +655,7 @@ I'll classify this query for you. Here's the JSON:
           const response = await this.anthropic.messages.create({
             model: modelToUse,
             system: updatedSystemPrompt,
-            messages: messages as any, // Type assertion to resolve SDK type issue
+            messages: this.cleanMessagesForAPI(messages), // Clean messages before sending to API
             max_tokens: 2000,
             temperature: 0.2, // Low temperature for more deterministic classification
           });
@@ -700,6 +868,14 @@ RESPOND IN AS FEW CHARACTERS AS POSSIBLE.`;
       } catch (error: any) {
         lastError = error;
         console.warn(`API call failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message || error);
+        
+        // For rate limit errors (429), immediately try OpenAI fallback if available
+        if ((error.status === 429 || error.error?.type === 'rate_limit_error') && 
+            openAiFallbackOptions && this.openai) {
+          console.log('🔄 Rate limit (429) encountered. Immediately falling back to OpenAI...');
+          // Break out of the retry loop to immediately try OpenAI fallback
+          break;
+        }
         
         // If this was the last attempt, don't retry with Claude
         if (attempt >= maxRetries) {
@@ -1180,8 +1356,8 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
       }, TIMEOUT_MS);
     });
     
-    // Max retry attempts for rate limiting and other recoverable errors
-    const MAX_RETRIES = 3;
+    // Only retry once if needed
+    const MAX_RETRIES = 1;
     let retryCount = 0;
     let lastError: any = null;
     
@@ -1513,17 +1689,6 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
       }
       
       // If we're here, either we've exhausted retries or the error is not recoverable
-      // Try to generate a simplified response with a smaller context if possible
-      if (this.canUseReducedContext(error)) {
-        try {
-          console.log('Attempting to generate response with reduced context...');
-          return await this.generateSimplifiedExplanation(userQuery, workbookContext, streamHandler);
-        } catch (fallbackError) {
-          console.error('Fallback explanation also failed:', fallbackError);
-          // Continue to error handling below
-        }
-      }
-      
       // Handle the error appropriately
       throw this.handleApiError(lastError);
     }

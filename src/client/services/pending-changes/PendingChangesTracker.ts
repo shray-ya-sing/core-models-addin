@@ -6,10 +6,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { ExcelOperation } from '../models/ExcelOperationModels';
-import { VersionHistoryService } from './versioning/VersionHistoryService';
-import { ActionRecorder } from './versioning/ActionRecorder';
-import { UndoHandlers } from './versioning/UndoHandlers';
+import { ExcelOperation } from '../../models/ExcelOperationModels';
+import { VersionHistoryService } from '../versioning/VersionHistoryService';
+import { ActionRecorder } from '../versioning/ActionRecorder';
+import { UndoHandlers } from '../versioning/UndoHandlers';
 
 /**
  * Status of a pending change

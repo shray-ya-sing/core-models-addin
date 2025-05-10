@@ -5,11 +5,11 @@
  * This system allows users to review, accept, or reject changes made by AI.
  */
 
-import { ClientExcelCommandInterpreter } from './ClientExcelCommandInterpreter';
-import { VersionHistoryService } from './versioning/VersionHistoryService';
-import { ActionRecorder } from './versioning/ActionRecorder';
+import { ClientExcelCommandInterpreter } from '../actions/ClientExcelCommandInterpreter';
+import { VersionHistoryService } from '../versioning/VersionHistoryService';
+import { ActionRecorder } from '../versioning/ActionRecorder';
 import { PendingChangesTracker } from './PendingChangesTracker';
-import { ShapeEventHandler } from './ShapeEventHandler';
+import { ShapeEventHandler } from '../ShapeEventHandler';
 
 /**
  * Factory for creating and initializing the AI changes approval system

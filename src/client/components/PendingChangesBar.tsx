@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react';
-import { PendingChange, PendingChangeStatus } from '../services/PendingChangesTracker';
+import { PendingChange, PendingChangeStatus } from '../services/pending-changes/PendingChangesTracker';
 
 interface PendingChangesBarProps {
   pendingChanges: PendingChange[];

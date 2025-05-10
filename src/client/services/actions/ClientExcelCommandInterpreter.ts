@@ -9,12 +9,12 @@ import {
   SetRowColumnOptionsOperation,
   SetCalculationOptionsOperation,
   RecalculateRangesOperation
-} from '../models/ExcelOperationModels';
-import * as ExcelUtils from '../utils/ExcelUtils';
-import { ActionRecorder } from './versioning/ActionRecorder';
-import { VersionHistoryService } from './versioning/VersionHistoryService';
-import { PendingChangesTracker } from './PendingChangesTracker';
-import { ShapeEventHandler } from './ShapeEventHandler';
+} from '../../models/ExcelOperationModels';
+import * as ExcelUtils from '../../utils/ExcelUtils';
+import { ActionRecorder } from '../versioning/ActionRecorder';
+import { VersionHistoryService } from '../versioning/VersionHistoryService';
+import { PendingChangesTracker } from '../pending-changes/PendingChangesTracker';
+import { ShapeEventHandler } from '../ShapeEventHandler';
 
 /**
  * Service that interprets and executes Excel operations using Office.js

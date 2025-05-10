@@ -1,1447 +1,364 @@
 import * as React from 'react';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import VersionHistoryView from './VersionHistoryView';
-import { ClientCommandManager } from '../services/ClientCommandManager';
-import { ClientCommandExecutor } from '../services/ClientCommandExecutor';
-import { ClientWorkbookStateManager } from '../services/ClientWorkbookStateManager';
-import { ClientSpreadsheetCompressor } from '../services/ClientSpreadsheetCompressor';
-import { ClientExcelCommandAdapter } from '../services/ClientExcelCommandAdapter';
-import { ClientExcelCommandInterpreter } from '../services/ClientExcelCommandInterpreter';
-import { ClientAnthropicService } from '../services/ClientAnthropicService';
-import { ClientKnowledgeBaseService } from '../services/ClientKnowledgeBaseService';
-import { ClientQueryProcessor, QueryProcessorResult } from '../services/ClientQueryProcessor';
-import { initializeMultimodalAnalysisService } from '../services/document-understanding/MultimodalAnalysisService';
-import { VersionHistoryProvider } from '../services/versioning/VersionHistoryProvider';
-import { VersionEventType } from '../models/VersionModels';
-import { Command, CommandStatus } from '../models/CommandModels';
-import { ProcessStatusManager, ProcessStatus, ProcessStage } from '../models/ProcessStatusModels';
-import { TypewriterEffect } from './TypewriterEffect';
-import StatusIndicator, { StatusType } from './StatusIndicator';
-import ProcessStatusTracker from './ProcessStatusTracker';
-import { getStageName } from './ProcessStatusTracker';
-import config from '../config';
-import { AIApprovalSystem } from '../services/AIApprovalSystem';
-import { PendingChangesTracker, PendingChange } from '../services/PendingChangesTracker';
-import { ShapeEventHandler } from '../services/ShapeEventHandler';
-import { SendIcon, FileIcon, CheckIcon, AlertCircleIcon } from './icons';
-import PendingChangesBar from './PendingChangesBar';
-
-/**
- * Attachment type definition
- */
-interface Attachment {
-  type: 'image' | 'pdf';
-  name: string;
-  content: string; // base64 encoded content
-  mimeType: string;
-}
-
-/**
- * Message type definition
- */
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'status';
-  content: string;
-  attachments?: Attachment[];
-  isStreaming?: boolean;
-  status?: StatusType;
-  stage?: string;
-}
-
-/**
- * Conversation session interface
- */
-// Conversation session interface
-interface ConversationSession {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-  lastUpdated: number; // timestamp
-  createdAt: number; // timestamp
-  workbookId?: string; // Identifier for the associated workbook
-}
+import { useState, useEffect, useRef } from 'react';
+import { ChatMessage, Attachment } from '../models/ConversationModels';
+import ChatMessageList from './ChatMessageList';
+import ChatInputArea from './ChatInputArea';
+import { useChatServices } from '../hooks/useChatServices';
+import useConversationState from '../hooks/useConversationState';
 
 interface TailwindFinancialModelChatProps {
-  newConversationTrigger?: number;
-  showPastConversationsTrigger?: number;
-  showVersionHistoryTrigger?: number;
-  onComponentsReady?: (components: {
-    queryProcessor: ClientQueryProcessor;
-    commandInterpreter: ClientExcelCommandInterpreter;
-  }) => void;
+  initialMessage?: string;
+  resetChat?: boolean;
 }
 
 const TailwindFinancialModelChat: React.FC<TailwindFinancialModelChatProps> = ({ 
-  newConversationTrigger = 0,
-  showPastConversationsTrigger = 0,
-  showVersionHistoryTrigger = 0
+  initialMessage = '',
+  resetChat = false
 }) => {
-  // State variables for the chat component
-  // Storage key for conversations in localStorage
-  const STORAGE_KEY = 'excel-addin-conversations';
-  
-  // Current conversation and messages state
-  const [currentSession, setCurrentSession] = useState<string>(''); // Current session ID
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState('');
+  // Basic UI state
   const [isLoading, setIsLoading] = useState(false);
-  const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
-  const [servicesReady, setServicesReady] = useState(false);
-  const [streamingResponse, setStreamingResponse] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [userInput, setUserInput] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingResponse, setStreamingResponse] = useState('');
   
-  // All saved conversations
-  const [sessions, setSessions] = useState<ConversationSession[]>([]);
+  // Track processed messages to avoid duplicates
+  const processedMessagesRef = useRef<Set<string>>(new Set());
   
-  // Current workbook ID
-  const [currentWorkbookId, setCurrentWorkbookId] = useState<string>('');
+  // Initialize services
+  const {
+    queryProcessor,
+    servicesReady,
+    currentWorkbookId
+  } = useChatServices();
   
-  // UI state for past conversations view and version history
-  const [showPastConversationsView, setShowPastConversationsView] = useState<boolean>(false);
-  const [showVersionHistoryView, setShowVersionHistoryView] = useState<boolean>(false);
+  // Initialize conversation state
+  const {
+    messages,
+    setMessages,
+    createNewSession,
+    updateSessionMessages
+  } = useConversationState({ currentWorkbookId });
   
-  // Command approval state
-  const [approvalEnabled, setApprovalEnabled] = useState<boolean>(false);
-  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
-  
-  // Create a new conversation session
-  const createNewSession = useCallback(() => {
-    const newSessionId = uuidv4();
-    const newSession: ConversationSession = {
-      id: newSessionId,
-      title: 'New Conversation',
-      messages: [],
-      lastUpdated: Date.now(),
-      createdAt: Date.now(),
-      workbookId: currentWorkbookId,
-    };
-
-    // Add to sessions
-    setSessions((prev) => [newSession, ...prev]);
-
-    // Save to localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([newSession]));
-
-    return newSessionId;
-  }, [currentWorkbookId]);
-  
-  // Function to clear all conversations - simplified to avoid any potential issues
-  const clearAllConversations = () => {
-    try {
-      // Clear from localStorage first
-      localStorage.removeItem(STORAGE_KEY);
-      
-      // Reset all state in one go
-      setSessions([]);
-      setMessages([]);
-      setCurrentSession('');
-      setHasUserSentMessage(false);
-      
-      // Force a page reload to ensure clean state
-      window.location.reload();
-    } catch (error) {
-      console.error('Error clearing conversations:', error);
-      // Silent error handling - no alert to avoid additional dialogs
-    }
-  };
-
-  // Filter sessions by current workbook ID
-  const getWorkbookSessions = (allSessions: ConversationSession[]) => {
-    // If we don't have a workbook ID yet, return all sessions
-    if (!currentWorkbookId) {
-      return allSessions;
-    }
-    
-    // Filter sessions to only include those for the current workbook
-    // Also include sessions without a workbookId (for backward compatibility)
-    return allSessions.filter((session) => session.workbookId === currentWorkbookId || !session.workbookId);
-  };
-  
-  // State to control showing all conversations
-  const [showAllConversations, setShowAllConversations] = useState(false);
-  
-  // Refs
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Service instances
-  const [commandManager, setCommandManager] = useState<ClientCommandManager | null>(null);
-  const [commandExecutor, setCommandExecutor] = useState<ClientCommandExecutor | null>(null);
-  const [workbookStateManager, setWorkbookStateManager] = useState<ClientWorkbookStateManager | null>(null);
-  const [spreadsheetCompressor, setSpreadsheetCompressor] = useState<ClientSpreadsheetCompressor | null>(null);
-  const [anthropicService, setAnthropicService] = useState<ClientAnthropicService | null>(null);
-  const [knowledgeBaseService, setKnowledgeBaseService] = useState<ClientKnowledgeBaseService | null>(null);
-  const [queryProcessor, setQueryProcessor] = useState<ClientQueryProcessor | null>(null);
-  const [commandInterpreter, setCommandInterpreter] = useState<ClientExcelCommandInterpreter | null>(null);
-  const versionHistoryProviderRef = useRef<VersionHistoryProvider>(new VersionHistoryProvider());
-  const [pendingChangesTracker, setPendingChangesTracker] = useState<PendingChangesTracker | null>(null);
-  const [shapeEventHandler, setShapeEventHandler] = useState<ShapeEventHandler | null>(null);
-  // Status trackers
-  const [statusManager] = useState<ProcessStatusManager>(() => ProcessStatusManager.getInstance());
-  const [currentStatus, setCurrentStatus] = useState<ProcessStatus | null>(null);
-  
-  // Load sessions from localStorage when component mounts
+  // Handle reset chat
   useEffect(() => {
-    const savedSessions = localStorage.getItem(STORAGE_KEY);
-    if (savedSessions) {
-      try {
-        const parsedSessions = JSON.parse(savedSessions) as ConversationSession[];
-        setSessions(parsedSessions);
+    if (resetChat) {
+      // Clear all messages
+      setMessages([]);
+      processedMessagesRef.current.clear();
+      
+      // Create a new session
+      createNewSession();
+    }
+  }, [resetChat, setMessages, createNewSession]);
+  
+  // Process initial message
+  useEffect(() => {
+    const processInitialMessage = async () => {
+      // Only process if we have an initialMessage that hasn't been processed yet
+      if (initialMessage && 
+          !processedMessagesRef.current.has(initialMessage) && 
+          servicesReady && 
+          !isLoading) {
         
-        // Load the most recent session
-        if (parsedSessions.length > 0) {
-          const latestSession = parsedSessions[0];
-          setCurrentSession(latestSession.id);
-          setMessages(latestSession.messages);
+        // Mark as processed to prevent duplicates
+        processedMessagesRef.current.add(initialMessage);
+        
+        // Create a new user message
+        const userMessage: ChatMessage = {
+          role: 'user',
+          content: initialMessage
+        };
+        
+        // Set the message as the only message in the chat
+        setMessages([userMessage]);
+        
+        // Set loading state
+        setIsLoading(true);
+        
+        try {
+          if (queryProcessor) {
+            // Set up streaming state
+            setIsStreaming(true);
+            setStreamingResponse('');
+            
+            // Create a streaming response handler
+            const handleStreamingResponse = (chunk: string) => {
+              setStreamingResponse(prev => {
+                const newResponse = prev + chunk;
+                
+                // Update messages with streaming response
+                setMessages([
+                  userMessage,
+                  {
+                    role: 'assistant',
+                    content: newResponse,
+                    isStreaming: true
+                  }
+                ]);
+                
+                return newResponse;
+              });
+            };
+            
+            // Process the query with streaming handler
+            const result = await queryProcessor.processQuery(
+              initialMessage,
+              handleStreamingResponse, // Streaming handler
+              [], // Empty chat history
+              [] // No attachments
+            );
+            
+            // Streaming complete, update with final message
+            setIsStreaming(false);
+            
+            // Add the assistant response (final version)
+            setMessages([
+              userMessage,
+              {
+                role: 'assistant',
+                content: result.assistantMessage,
+                isStreaming: false
+              }
+            ]);
+          }
+        } catch (error) {
+          console.error('Error processing message:', error);
+          
+          // Add error message
+          setMessages([
+            userMessage,
+            {
+              role: 'system',
+              content: 'I encountered an error processing your request.'
+            }
+          ]);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error loading sessions from localStorage:', error);
-        // Clear invalid data
-        localStorage.removeItem(STORAGE_KEY);
       }
-    }
-  }, []);
-
-  // Function to refresh pending changes
-  const refreshPendingChanges = useCallback(() => {
-    if (pendingChangesTracker && currentWorkbookId) {
-      console.log('Refreshing pending changes for workbook:', currentWorkbookId);
-      const changes = pendingChangesTracker.getPendingChanges(currentWorkbookId);
-      console.log('Found pending changes:', changes.length);
-      setPendingChanges(changes);
-    }
-  }, [pendingChangesTracker, currentWorkbookId]);
+    };
+    
+    processInitialMessage();
+  }, [initialMessage, servicesReady, isLoading, queryProcessor, setMessages]);
   
-  // Functions to handle accept/reject actions
-  const handleAcceptAll = useCallback(async () => {
-    if (pendingChangesTracker && pendingChanges.length > 0) {
-      for (const change of pendingChanges) {
-        await pendingChangesTracker.acceptChange(change.id);
+  // Handle sending a message
+  const handleSendMessage = async () => {
+    if (!userInput.trim() || !servicesReady || isLoading) return;
+    
+    // Create user message with any attachments
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: userInput,
+      attachments: attachments.length > 0 ? [...attachments] : undefined
+    };
+    
+    // Add to messages
+    setMessages(prev => [...prev, userMessage]);
+    
+    // Clear input and attachments
+    setUserInput('');
+    setAttachments([]);
+    
+    // Set loading state
+    setIsLoading(true);
+    
+    try {
+      if (queryProcessor) {
+        // Set up streaming state
+        setIsStreaming(true);
+        setStreamingResponse('');
+        
+        // Create a streaming response handler
+        const handleStreamingResponse = (chunk: string) => {
+          setStreamingResponse(prev => {
+            const newResponse = prev + chunk;
+            
+            // Check if we already have a streaming message in the current conversation
+            setMessages(prev => {
+              const newMessages = [...prev];
+              
+              // Find the last user message first to identify the current conversation
+              const lastUserMsgIndex = [...newMessages].reverse().findIndex(m => m.role === 'user');
+              
+              if (lastUserMsgIndex === -1) {
+                // No user message found, just append the assistant message
+                newMessages.push({
+                  role: 'assistant',
+                  content: newResponse,
+                  isStreaming: true
+                });
+                return newMessages;
+              }
+              
+              // Convert to actual index (from the end)
+              const actualUserIndex = newMessages.length - 1 - lastUserMsgIndex;
+              
+              // Look for a streaming assistant message after the last user message
+              let assistantMsgIndex = -1;
+              for (let i = actualUserIndex + 1; i < newMessages.length; i++) {
+                if (newMessages[i].role === 'assistant' && newMessages[i].isStreaming === true) {
+                  assistantMsgIndex = i;
+                  break;
+                }
+              }
+              
+              if (assistantMsgIndex >= 0) {
+                // Update existing streaming message in the current conversation
+                newMessages[assistantMsgIndex] = {
+                  ...newMessages[assistantMsgIndex],
+                  content: newResponse
+                };
+              } else {
+                // Add new streaming message after the last user message and any status messages
+                let insertIndex = actualUserIndex + 1;
+                
+                // Skip past any status messages
+                while (insertIndex < newMessages.length && newMessages[insertIndex].role === 'status') {
+                  insertIndex++;
+                }
+                
+                // Insert the new assistant message at the right position
+                newMessages.splice(insertIndex, 0, {
+                  role: 'assistant',
+                  content: newResponse,
+                  isStreaming: true
+                });
+              }
+              
+              return newMessages;
+            });
+            
+            return newResponse;
+          });
+        };
+        
+        // Process the query with streaming handler
+        const result = await queryProcessor.processQuery(
+          userInput,
+          handleStreamingResponse, // Streaming handler
+          messages, // Current chat history
+          attachments // Include any attachments
+        );
+        
+        // Streaming complete
+        setIsStreaming(false);
+        
+        // Update the final message without streaming flag
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const assistantMsgIndex = newMessages.findIndex(m => 
+            m.role === 'assistant' && m.isStreaming === true
+          );
+          
+          if (assistantMsgIndex >= 0) {
+            newMessages[assistantMsgIndex] = {
+              role: 'assistant',
+              content: result.assistantMessage,
+              isStreaming: false
+            };
+          } else {
+            // Fallback if no streaming message was found
+            newMessages.push({
+              role: 'assistant',
+              content: result.assistantMessage
+            });
+          }
+          
+          return newMessages;
+        });
       }
-      refreshPendingChanges();
+    } catch (error) {
+      console.error('Error processing message:', error);
+      
+      // Add error message
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'system',
+          content: 'I encountered an error processing your request.'
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
     }
-  }, [pendingChangesTracker, pendingChanges, refreshPendingChanges]);
+  };
   
-  const handleRejectAll = useCallback(async () => {
-    if (pendingChangesTracker && pendingChanges.length > 0) {
-      for (const change of pendingChanges) {
-        await pendingChangesTracker.rejectChange(change.id);
-      }
-      refreshPendingChanges();
-    }
-  }, [pendingChangesTracker, pendingChanges, refreshPendingChanges]);
-  
-  const handleAcceptChange = useCallback(async (changeId: string) => {
-    if (pendingChangesTracker) {
-      await pendingChangesTracker.acceptChange(changeId);
-      refreshPendingChanges();
-    }
-  }, [pendingChangesTracker, refreshPendingChanges]);
-  
-  const handleRejectChange = useCallback(async (changeId: string) => {
-    if (pendingChangesTracker) {
-      await pendingChangesTracker.rejectChange(changeId);
-      refreshPendingChanges();
-    }
-  }, [pendingChangesTracker, refreshPendingChanges]);
-
-  /**
-   * Handle file selection for attachments
-   */
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
+  // Handle file uploads
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+    
     // Process each selected file
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    Array.from(event.target.files).forEach(file => {
+      // Check file size (limit to 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        console.warn(`File ${file.name} exceeds 5MB size limit and will be skipped`);
+        return;
+      }
+      
       const reader = new FileReader();
-
+      
       reader.onload = (e) => {
-        const base64Content = e.target?.result as string;
-        // Remove the data URL prefix (e.g., 'data:image/jpeg;base64,') to get just the base64 string
-        const base64Data = base64Content.split(',')[1];
-
+        if (!e.target || typeof e.target.result !== 'string') return;
+        
         // Determine file type
-        const fileType = file.type.startsWith('image/') ? 'image' : 'pdf';
-
+        let fileType: 'image' | 'pdf' = 'image';
+        if (file.type === 'application/pdf') {
+          fileType = 'pdf';
+        } else if (!file.type.startsWith('image/')) {
+          console.warn(`Unsupported file type: ${file.type}`);
+          return;
+        }
+        
         // Create attachment object
         const newAttachment: Attachment = {
           type: fileType,
           name: file.name,
-          content: base64Data,
-          mimeType: file.type,
+          content: e.target.result,
+          mimeType: file.type
         };
-
-        // Add to attachments
-        setAttachments((prev) => [...prev, newAttachment]);
+        
+        // Add to attachments array
+        setAttachments(prev => [...prev, newAttachment]);
       };
-
+      
+      reader.onerror = () => {
+        console.error(`Error reading file: ${file.name}`);
+      };
+      
+      // Read file as data URL
       reader.readAsDataURL(file);
-    }
-
-    // Clear the file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  /**
-   * Handle input changes in the textarea
-   */
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setUserInput(e.target.value);
-  };
-
-  /**
-   * Handle keyboard shortcuts
-   */
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Send message on Enter (without shift)
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  // Get current workbook ID
-  const getCurrentWorkbookId = async (): Promise<string> => {
-    try {
-      // Check if Office and Excel are available
-      if (typeof Excel === 'undefined') {
-        console.warn('Excel API not available');
-        return 'unknown-workbook';
-      }
-      
-      return await Excel.run(async (context) => {
-        // Get the workbook properties
-        const workbook = context.workbook;
-        workbook.load('name');
-        
-        await context.sync();
-        
-        // Use the workbook name as the ID, or a fallback if not available
-        const workbookId = workbook.name || `workbook-${new Date().getTime()}`;
-        return workbookId;
-      });
-    } catch (error) {
-      console.error('Error getting workbook ID:', error);
-      return 'unknown-workbook';
-    }
-  };
-  
-  // Initialize services
-  useEffect(() => {
-    // Initialize all client services
-    const initializeClientServices = async () => {
-      // Get the current workbook ID
-      const workbookId = await getCurrentWorkbookId();
-      setCurrentWorkbookId(workbookId);
-      console.log('Current workbook ID:', workbookId);
-
-      try {
-        // Log initialization
-        console.log('%c Initializing client services...', 'background: #222; color: #bada55; font-size: 14px');
-        
-        // Check for API key
-        if (!config.anthropicApiKey) {
-          console.warn('No Anthropic API key found in configuration');
-        }
-        
-        // Create service instances
-        // Create a single interpreter instance that will be shared by all components
-        const interpreter = new ClientExcelCommandInterpreter();
-        
-        // Initialize version history system first
-        console.log(`🔄 [TailwindFinancialModelChat] Initializing version history system with workbookId: ${workbookId}`);
-        versionHistoryProviderRef.current.initialize(interpreter);
-        versionHistoryProviderRef.current.setCurrentWorkbookId(workbookId);
-        
-        // Verify the version history system is properly initialized
-        console.log(`✅ [TailwindFinancialModelChat] Version history system initialized with interpreter:`, {
-          hasActionRecorder: !!interpreter.getActionRecorder(),
-          workbookId: interpreter.getCurrentWorkbookId() || 'not set',
-        });
-        
-        // Now create the other services
-        const stateManager = new ClientWorkbookStateManager();
-        const compressor = new ClientSpreadsheetCompressor();
-        const executor = new ClientCommandExecutor(stateManager);
-        
-        // Create the command adapter with our shared interpreter instance
-        const adapter = new ClientExcelCommandAdapter(interpreter);
-        
-        // Create the command manager with our shared adapter instance
-        const manager = new ClientCommandManager(executor, stateManager, adapter);
-        
-        // Log the shared components to verify they're properly connected
-        console.log(`🔄 [TailwindFinancialModelChat] Shared components:`, {
-          interpreter: interpreter,
-          adapter: adapter,
-          manager: manager,
-        });
-
-        const anthropic = new ClientAnthropicService(config.anthropicApiKey, config.openaiApiKey);
-        const knowledgeBase = new ClientKnowledgeBaseService(config.knowledgeBaseApiUrl);
-        const processor = new ClientQueryProcessor({
-          anthropic,
-          kbService: knowledgeBase,
-          workbookStateManager: stateManager,
-          compressor,
-          commandManager: manager,
-        });
-        
-        // Initialize the multimodal analysis service with the Anthropic service and current workbook ID
-        console.log(`🔄 [TailwindFinancialModelChat] Initializing multimodal analysis service for workbook: ${workbookId}`);
-        initializeMultimodalAnalysisService(anthropic, workbookId);
-        
-        // Set up event listeners for workbook changes
-        await stateManager.setupChangeListeners();
-        
-        // Initialize the version history provider with the current workbook ID
-        console.log(`🔄 [TailwindFinancialModelChat] Setting workbook ID in version history provider: ${workbookId}`);
-        versionHistoryProviderRef.current.setCurrentWorkbookId(workbookId);
-        
-        // Initialize AI Approval System
-        console.log(`🔄 [TailwindFinancialModelChat] Initializing AI approval system...`);
-        const versionHistoryService = versionHistoryProviderRef.current.getVersionHistoryService();
-        const { pendingChangesTracker: pct, shapeEventHandler: seh } = AIApprovalSystem.initialize(interpreter, versionHistoryService);
-        
-        // Set the current workbook ID on the shape event handler
-        seh.setCurrentWorkbookId(workbookId);
-        
-        // Start the shape event handler polling
-        seh.startPolling();
-        
-        // Update state with service instances
-        setWorkbookStateManager(stateManager);
-        setSpreadsheetCompressor(compressor);
-        setCommandExecutor(executor);
-        setCommandManager(manager);
-        setAnthropicService(anthropic);
-        setKnowledgeBaseService(knowledgeBase);
-        setQueryProcessor(processor);
-        setCommandInterpreter(interpreter);
-        setPendingChangesTracker(pct);
-        setShapeEventHandler(seh);
-        
-        // Enable approval workflow by default
-        interpreter.setRequireApproval(true);
-        setApprovalEnabled(true);
-        console.log(`✅ [TailwindFinancialModelChat] AI approval system initialized and enabled`);
-        
-        // Register for command updates
-        const unsubscribeCommandUpdate = manager.onCommandUpdate((command) => {
-          console.log('Command update received:', command);
-          
-          // If the command is completed, log it but don't add a message to the chat
-          if (command.status === CommandStatus.Completed) {
-            console.log(`Command "${command.description}" completed successfully.`);
-            
-            // Refresh pending changes after command execution
-            console.log('🔄 [TailwindFinancialModelChat] Command completed, refreshing pending changes');
-            setTimeout(() => {
-              if (pct && workbookId) {
-                const changes = pct.getPendingChanges(workbookId);
-                console.log('Found pending changes after command execution:', changes.length);
-                setPendingChanges(changes);
-              }
-            }, 500); // Small delay to ensure changes are registered
-          } else if (command.status === CommandStatus.Failed) {
-            console.error(`Command "${command.description}" failed: ${command.error || 'Unknown error'}`);
-            // Only show error messages, not success messages
-            setMessages(prev => [...prev, { 
-              role: 'system', 
-              content: `Command "${command.description}" failed: ${command.error || 'Unknown error'}` 
-            }]);
-          }
-        });
-                
-        // Set up process status manager listener
-        const processManager = ProcessStatusManager.getInstance();
-        const unsubscribeProcessEvents = processManager.addListener((event) => {
-          console.log('Process Status Event:', event);
-          
-          // Map process status to StatusIndicator status
-          let statusType = StatusType.Idle;
-          switch (event.status) {
-            case ProcessStatus.Pending:
-              statusType = StatusType.Pending;
-              break;
-            case ProcessStatus.Success:
-              statusType = StatusType.Success;
-              break;
-            case ProcessStatus.Error:
-              statusType = StatusType.Error;
-              break;
-          }
-          
-          // Add process status as a message in the chat
-          setMessages(prev => {
-            // Find the last user message index
-            const lastUserMsgIndex = [...prev].reverse().findIndex(m => m.role === 'user');
-            
-            // If we found a user message
-            if (lastUserMsgIndex >= 0) {
-              const actualIndex = prev.length - 1 - lastUserMsgIndex;
-              
-              // First, remove any pending messages for this stage if we're getting a success/error
-              let newMessages = [...prev];
-              if (statusType === StatusType.Success || statusType === StatusType.Error) {
-                newMessages = newMessages.filter(m => !(m.role === 'status' && m.stage === event.stage && m.status === StatusType.Pending));
-              }
-              
-              // Now find if we have any existing status message for this stage after filtering
-              const existingStatusIndex = newMessages.findIndex(m => m.role === 'status' && m.stage === event.stage && m.status === statusType);
-              
-              // Create the status message
-              const statusMessage = {
-                role: 'status' as const,
-                content: event.message,
-                status: statusType,
-                stage: event.stage
-              };
-              
-              if (existingStatusIndex >= 0) {
-                // Update existing message with same status
-                newMessages[existingStatusIndex] = statusMessage;
-              } else {
-                // Find the right position to insert the new message
-                // It should go after the user message and any existing status messages for this query
-                let insertIndex = actualIndex + 1;
-                
-                // Find the last status message related to the current user message
-                for (let i = insertIndex; i < newMessages.length; i++) {
-                  if (newMessages[i].role === 'status') {
-                    insertIndex = i + 1;
-                  } else if (newMessages[i].role === 'assistant') {
-                    // Stop at the assistant message
-                    break;
-                  }
-                }
-                
-                // Insert at the determined position
-                newMessages.splice(insertIndex, 0, statusMessage);
-              }
-              
-              return newMessages;
-            }
-            
-            return prev;
-          });
-        });
-        
-        // Mark services as ready
-        console.log('%c All services initialized successfully!', 'background: #222; color: #2ecc71; font-size: 14px');
-        setServicesReady(true);
-        
-        // Return cleanup function
-        return () => {
-          if (unsubscribeCommandUpdate) unsubscribeCommandUpdate();
-          if (unsubscribeProcessEvents) unsubscribeProcessEvents();
-          
-          // Stop the shape event handler polling
-          if (seh) {
-            seh.stopPolling();
-            console.log('🛑 [TailwindFinancialModelChat] Stopped shape event handler polling');
-          }
-        };
-      } catch (error) {
-        console.error('Error initializing client services:', error);
-        setMessages(prev => [...prev, { 
-          role: 'system', 
-          content: `Error initializing services: ${error.message}` 
-        }]);
-        return () => {}; // Return empty cleanup function for error case
-      }
-    };
-    
-    const cleanup = initializeClientServices();
-    
-    // Cleanup function
-    return () => {
-      if (cleanup) {
-        cleanup.then(cleanupFn => {
-          if (cleanupFn) cleanupFn();
-          return;
-        }).catch(err => {
-          console.error('Error in cleanup function:', err);
-        });
-      }
-    };
-  }, []);
-
-  // Load saved conversations from localStorage on component mount
-  useEffect(() => {
-    const loadSavedSessions = () => {
-      try {
-        const savedSessions = localStorage.getItem(STORAGE_KEY);
-        if (savedSessions) {
-          const parsedSessions = JSON.parse(savedSessions) as ConversationSession[];
-          // Sort sessions by last updated timestamp (newest first)
-          const sortedSessions = parsedSessions.sort((a, b) => b.lastUpdated - a.lastUpdated);
-          setSessions(sortedSessions);
-        }
-      } catch (error) {
-        console.error('Error loading saved sessions:', error);
-      }
-    };
-    
-    loadSavedSessions();
-  }, []);
-  
-  // Set current session based on workbook ID when it changes
-  useEffect(() => {
-    if (!currentWorkbookId || sessions.length === 0) return;
-    
-    console.log('Setting session based on workbook ID:', currentWorkbookId);
-    
-    // Get workbook-specific sessions
-    const workbookSessions = getWorkbookSessions(sessions);
-    
-    // If there are workbook-specific sessions, set the most recent one as current
-    if (workbookSessions.length > 0) {
-      setCurrentSession(workbookSessions[0].id);
-      setMessages(workbookSessions[0].messages);
-      console.log('Loaded existing session for workbook:', workbookSessions[0].title);
-    } else {
-      // If no workbook-specific sessions, create a new one
-      console.log('No sessions for current workbook, creating new session');
-      createNewSession();
-    }
-  }, [currentWorkbookId, sessions.length]);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
-  
-  // Update localStorage when sessions change
-  useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    }
-  }, [sessions]);
-  
-  // Update current session's messages when messages state changes
-  useEffect(() => {
-    if (currentSession && messages.length > 0) {
-      updateSessionMessages(currentSession, messages);
-    }
-  }, [messages]);
-  
- 
-  
-  const getSessionTitle = (messages: ChatMessage[]) => {
-    // Find first user message to use as title
-    const firstUserMessage = messages.find(msg => msg.role === 'user');
-    if (firstUserMessage) {
-      // Truncate to reasonable title length (max 30 chars)
-      const truncatedContent = firstUserMessage.content.substring(0, 30);
-      return truncatedContent + (firstUserMessage.content.length > 30 ? '...' : '');
-    }
-    return 'New Conversation';
-  };
-  
-  const updateSessionMessages = (sessionId: string, updatedMessages: ChatMessage[]) => {
-    setSessions(prev => {
-      return prev.map(session => {
-        if (session.id === sessionId) {
-          // Update the title if it's still the default and we have user messages
-          const title = session.title === 'New Conversation' 
-            ? getSessionTitle(updatedMessages)
-            : session.title;
-            
-          return {
-            ...session,
-            messages: updatedMessages,
-            title,
-            lastUpdated: Date.now()
-          };
-        }
-        return session;
-      });
     });
-  };
-  
-  const loadSession = useCallback((sessionId: string) => {
-    try {
-      const session = sessions.find(s => s.id === sessionId);
-      if (session) {
-        // Set messages first, then update the current session ID
-        setMessages(session.messages || []);
-        setHasUserSentMessage((session.messages && session.messages.length > 0) || false);
-        setCurrentSession(sessionId);
-      } else {
-        console.warn(`Session with ID ${sessionId} not found`);
-      }
-    } catch (error) {
-      console.error('Error loading session:', error);
-    }
-  }, [sessions]);
-  
-  const formatTimeAgo = (timestamp: number) => {
-    const now = Date.now();
-    const secondsAgo = Math.floor((now - timestamp) / 1000);
     
-    if (secondsAgo < 60) return `${secondsAgo}s`;
-    if (secondsAgo < 3600) return `${Math.floor(secondsAgo / 60)}m`;
-    if (secondsAgo < 86400) return `${Math.floor(secondsAgo / 3600)}h`;
-    return `${Math.floor(secondsAgo / 86400)}d`;
-  };
-
-  // Load the most recent session when first opened (but don't create a new one)
-  useEffect(() => {
-    if (!currentSession && sessions.length > 0) {
-      // If there are existing sessions but none selected, select the most recent one
-      try {
-        loadSession(sessions[0].id);
-      } catch (error) {
-        console.error('Error loading initial session:', error);
-      }
-    }
-  }, [sessions, loadSession, currentSession]);
-  
-  // Handle sending a message
-  const handleSendMessage = async () => {
-      console.log('%c handleSendMessage called', 'background: #222; color: #3498db; font-size: 14px');
-      console.log('servicesReady:', servicesReady, 'queryProcessor:', !!queryProcessor);
-      
-      if (!servicesReady || !queryProcessor) {
-        console.warn('Services not ready yet!');
-      setMessages((prev) => [...prev, { role: 'system', content: 'Services are still initializing, please wait a moment...' }]);
-        return;
-      }
-      
-    // Check if we have either text input or attachments
-    if ((!userInput.trim() && attachments.length === 0) || isLoading) return;
-      
-    try {
-      // Add user message to the chat
-      const userMessage: ChatMessage = {
-        role: 'user',
-        content: userInput,
-        attachments: attachments.length > 0 ? [...attachments] : undefined,
-      };
-
-      // Add user message to the chat
-      setMessages((prevMessages) => [...prevMessages, userMessage]);
-      setHasUserSentMessage(true);
-
-      // Clear the input field and attachments
-      setUserInput('');
-      setAttachments([]);
-
-      // Set loading state
-      setIsLoading(true);
-
-      // If no current session, create one
-      if (!currentSession) {
-        const newSessionId = createNewSession();
-        setCurrentSession(newSessionId);
-      }
-      
-      console.log('%c Sending query to processor with attachments:', 'background: #222; color: #f39c12; font-size: 14px', {
-        query: userInput.substring(0, 50),
-        attachmentsCount: userMessage.attachments?.length || 0
-      });
-        
-        // Create a streaming response handler
-        const handleStreamingResponse = (chunk: string) => {
-          console.log('Received chunk:', chunk.substring(0, 20) + (chunk.length > 20 ? '...' : ''));
-          setStreamingResponse(prev => prev + chunk); // Append each chunk to our streaming state
-          
-          // Also update the messages array with the current partial response
-          setMessages(prev => {
-            // Create a new array to avoid mutating state directly
-            const newMessages = [...prev];
-            
-            // Find the assistant message if it exists (replace it) or add a new one
-            const assistantMsgIndex = newMessages.findIndex(m => 
-              m.role === 'assistant' && m.isStreaming === true
-            );
-            
-            if (assistantMsgIndex >= 0) {
-              // Update existing message
-              newMessages[assistantMsgIndex] = {
-                ...newMessages[assistantMsgIndex],
-                content: prev[assistantMsgIndex].content + chunk
-              };
-            } else {
-              // Add new message
-              newMessages.push({
-                role: 'assistant',
-                content: chunk,
-                isStreaming: true
-              } as ChatMessage);
-            }
-            
-            return newMessages;
-          });
-        };
-        
-        // Set streaming mode on
-        setIsStreaming(true);
-        setStreamingResponse('');
-        
-        // Create a safe wrapper that doesn't throw
-        const safeProcessQuery = async () => {
-          try {
-            // Convert our messages to the format expected by the ClientQueryProcessor
-            const chatHistory = messages
-              // Only include user, assistant, and system messages (exclude status messages)
-              .filter(msg => msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-              // Exclude streaming messages
-              .filter(msg => !msg.isStreaming)
-              // Only include the last 10 messages to avoid token limits
-              .slice(-10)
-              .map(msg => ({
-                // Explicitly cast to the allowed roles to satisfy TypeScript
-                role: msg.role as 'user' | 'assistant' | 'system',
-                content: msg.content
-              }));
-            
-            console.log(`%c Passing ${chatHistory.length} messages as conversation history`, 'color: #3498db');
-            
-            // Pass the streaming handler and chat history to the query processor
-            return await queryProcessor.processQuery(userInput, handleStreamingResponse, chatHistory, attachments);
-          } catch (innerError) {
-            console.error('Error in queryProcessor.processQuery:', innerError);
-            setIsStreaming(false);
-            return { 
-              processId: uuidv4(),
-              assistantMessage: "I encountered an error processing your request. This might be due to API connection issues. Please try again later.",
-              command: null
-            } as QueryProcessorResult;
-          }
-        };
-        
-        // Process the query using our new query processor with safe wrapper
-        const result = await safeProcessQuery();
-        
-        // Streaming is complete
-        setIsStreaming(false);
-      setIsLoading(false);
-        
-        // If we weren't streaming (or streaming failed), add the complete assistant response
-        // Otherwise, the streaming handler would have already added the message
-        if (!isStreaming) {
-          setMessages(prev => {
-            // Check if we already have a streaming message
-            const streamingIndex = prev.findIndex(m => m.role === 'assistant' && m.isStreaming === true);
-            
-            if (streamingIndex >= 0) {
-              // Replace the streaming message with the final one
-              const newMessages = [...prev];
-              newMessages[streamingIndex] = { 
-                role: 'assistant', 
-                content: result.assistantMessage 
-              };
-              return newMessages;
-            } else {
-              // No streaming message exists, add a new one
-              return [...prev, { 
-                role: 'assistant', 
-                content: result.assistantMessage 
-              }];
-            }
-          });
-        } else {
-          // Finalize any streaming message by removing the isStreaming flag
-          setMessages(prev => prev.map(msg => 
-            msg.isStreaming ? { ...msg, isStreaming: undefined } : msg
-          ));
-        }
-        
-        // If there's a command in the response, log it but don't show a message
-        if (result.command) {
-          console.log(`🔄 [TailwindFinancialModelChat] Command received: ${result.command.description}`);
-          
-          // Log the version history state
-          if (commandInterpreter) {
-            console.log(`🔄 [TailwindFinancialModelChat] Version history state:`, {
-              hasActionRecorder: !!commandInterpreter.getActionRecorder(),
-              workbookId: commandInterpreter.getCurrentWorkbookId() || 'not set'
-            });
-          }
-          
-          // Check if command is already being executed
-          if (commandManager) {
-            const command = commandManager.getCommand(result.command.id);
-            if (command) {
-              // Command exists, check its status
-              if (command.status === 'running' || command.status === 'pending') {
-                console.log(`🔔 [TailwindFinancialModelChat] Command ${result.command.id} is already being executed (status: ${command.status}). Skipping duplicate execution.`);
-                // We'll just wait for the status updates via the listener
-              } else if (command.status === 'completed') {
-                console.log(`✅ [TailwindFinancialModelChat] Command ${result.command.id} is already completed. No need to execute again.`);
-              } else if (command.status === 'failed') {
-                console.log(`⚠️ [TailwindFinancialModelChat] Command ${result.command.id} previously failed. Not re-executing.`);
-              } else {
-                // Command exists but is in an unknown state, execute it
-                console.log(`🔄 [TailwindFinancialModelChat] Executing command with ID: ${result.command.id}`);
-                await commandManager.executeCommand(result.command.id);
-                console.log(`✅ [TailwindFinancialModelChat] Command execution completed`);
-              }
-            } else {
-              // Command doesn't exist in the manager yet, which is unusual
-              // This might happen if there's a race condition where the command hasn't been added yet
-              console.log(`❓ [TailwindFinancialModelChat] Command ${result.command.id} not found in command manager. This is unexpected.`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('%c CRITICAL ERROR in message handling:', 'background: #f00; color: #fff; font-size: 14px', error);
-        console.trace('Stack trace:');
-        setMessages(prev => [...prev, { 
-          role: 'system', 
-          content: `An unexpected error occurred while processing your message. Technical details: ${error.message || 'Unknown error'}` 
-        }]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-  // Watch for new conversation triggers from the header component
-  useEffect(() => {
-    if (newConversationTrigger > 0) {
-      createNewSession();
-    }
-  }, [newConversationTrigger]);
-  
-  // Watch for show past conversations triggers from the header component
-  useEffect(() => {
-    if (showPastConversationsTrigger > 0) {
-      console.log('Show past conversations trigger received:', showPastConversationsTrigger);
-      // Toggle the past conversations view instead of showing all conversations in-place
-      setShowPastConversationsView(true);
-      // Hide version history view if it's open
-      setShowVersionHistoryView(false);
-    }
-  }, [showPastConversationsTrigger]);
-  
-  // Watch for show version history triggers from the header component
-  useEffect(() => {
-    if (showVersionHistoryTrigger > 0) {
-      console.log('Show version history trigger received:', showVersionHistoryTrigger);
-      
-      // Ensure the version history provider has the current workbook ID
-      if (commandInterpreter && currentWorkbookId) {
-        console.log(`🔄 [TailwindFinancialModelChat] Ensuring version history is initialized before showing panel`);
-        versionHistoryProviderRef.current.initialize(commandInterpreter);
-        versionHistoryProviderRef.current.setCurrentWorkbookId(currentWorkbookId);
-      }
-      
-      // Toggle the version history view
-      setShowVersionHistoryView(true);
-      // Hide past conversations view if it's open
-      setShowPastConversationsView(false);
-    }
-  }, [showVersionHistoryTrigger, commandInterpreter, currentWorkbookId]);
-
-  // Function to go back from past conversations view
-  const closePastConversationsView = () => {
-    setShowPastConversationsView(false);
+    // Reset the input field to allow selecting the same file again
+    event.target.value = '';
   };
   
-  // Function to go back from version history view
-  const closeVersionHistoryView = () => {
-    setShowVersionHistoryView(false);
+  // Remove attachment
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
   
-  // Render the component
   return (
     <div className="flex flex-col h-full font-mono text-sm relative">
-      {/* Main chat interface */}
-      {showVersionHistoryView ? (
-        // Version History View - using the separate component
-        <VersionHistoryView 
-          onClose={closeVersionHistoryView} 
-          workbookId={currentWorkbookId}
-          versionHistoryProvider={versionHistoryProviderRef.current}
-        />
-      ) : showPastConversationsView ? (
-        // Past Conversations View - full page transition
-        <div className="flex flex-col h-full p-4 animate-fadeIn transition-all duration-300">
-          {/* Header with back button */}
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center">
-              <button 
-                onClick={closePastConversationsView}
-                className="text-gray-400 hover:text-white p-1 mr-2 rounded transition-colors"
-                aria-label="Back"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path>
-                </svg>
-              </button>
-              <h2 className="font-medium text-white" style={{ 
-                fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                fontSize: '12px'
-              }}>Past Conversations</h2>
-              <button
-                onClick={clearAllConversations}
-                className="text-gray-400 hover:text-gray-300 text-xs px-2 py-1 rounded-md hover:bg-black/20 transition-colors"
-                aria-label="Clear all conversations"
-              >
-                Clear All
-              </button>
-            </div>
-          </div>
-          
-          {/* Scrollable Container for Past Conversations */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col space-y-0.5">
-              {sessions.length === 0 ? (
-                <div className="text-gray-500 text-center py-2" style={{ 
-                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                  fontSize: '11px' 
-                }}>
-                  No conversations yet
-                </div>
-              ) : (
-                getWorkbookSessions(sessions).map(session => (
-                  <div 
-                    key={session.id} 
-                    className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
-                    onClick={() => {
-                      try {
-                        loadSession(session.id);
-                        setTimeout(() => {
-                          closePastConversationsView();
-                        }, 0);
-                      } catch (error) {
-                        console.error('Error in onClick handler:', error);
-                      }
-                    }}
-                  >
-                    <div className="flex-grow text-white/80" style={{ 
-                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                      fontSize: '12px' 
-                    }}>{session.title}</div>
-                    <div className="ml-2" style={{ 
-                      fontSize: '10px', 
-                      opacity: 0.4, 
-                      color: 'white', 
-                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
-                    }}>{formatTimeAgo(session.lastUpdated)}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      ) : !hasUserSentMessage ? (
-        // Welcome screen with Tailwind CSS styling (similar to cascade-chat)
-        <div className="flex flex-col h-full p-4">
-          {/* Flex container that takes up all available space but allows Past Conversations to be at bottom */}
-          <div className="flex-1 flex flex-col justify-center">
-            {/* Main UI container - positioned to be just above Past Conversations */}
-            <div className="flex flex-col items-start mb-8 w-full transition-all duration-300">
-              {/* Logo without circular highlight - responsive sizing with direct inline styles */}
-              <div className="mb-6">
-                <img 
-                  src="assets/cori-logo.svg" 
-                  style={{ 
-                    width: '42px', 
-                    height: '42px', 
-                    opacity: 0.9,
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-                  }} 
-                  alt="Cori Logo" 
-                />  
-              </div>
-              
-              {/* Description with fixed font size */}
-              <p 
-                className="text-white/70 leading-relaxed text-left mb-6 max-w-sm" 
-                style={{ 
-                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                  fontSize: '12px'
-                }}
-              >
-                Build financial models or analyze existing financial data with expert assistance
-              </p>
-              
-              {/* Input area with separate send button - fixed sizes */}
-              <div className="flex items-center w-full max-w-lg space-x-2">
-                <textarea
-                  ref={textareaRef}
-                  className="flex-grow bg-transparent border border-gray-700 hover:border-gray-500 focus:border-blue-500 focus:ring-0 focus:outline-none p-2 text-white rounded-md placeholder-white/50 min-h-[36px] resize-none"
-                  placeholder="Ask anything"
-                  value={userInput}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyPress}
-                  disabled={isLoading || !servicesReady}
-                  rows={1}
-                  style={{ 
-                    fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                    fontSize: '12px'
-                  }}
-                />
-                <button
-                  className="text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30 p-1.5 rounded-md transition-colors flex items-center justify-center"
-                  onClick={handleSendMessage}
-                  disabled={!userInput.trim() || isLoading || !servicesReady}
-                  aria-label="Send message"
-                  type="button"
-                >
-                  {/* Enhanced clickable right arrow */}
-                  <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          {/* Past conversations - positioned at bottom with fixed sizes */}
-          <div className="w-full max-w-xl self-center past-conversations-section">
-            <div className="mb-3">
-              <h2 className="font-medium text-white" style={{ 
-                fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                fontSize: '12px'
-              }}>Past Conversations</h2>
-            </div>
-            <div className="flex flex-col space-y-0.5">
-              {sessions.length === 0 ? (
-                <div className="text-gray-500 text-center py-2" style={{ 
-                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                  fontSize: '11px' 
-                }}>
-                  No conversations yet
-                </div>
-              ) : (
-                // Always show only the first 3 conversations for the current workbook in the main view
-                getWorkbookSessions(sessions).slice(0, 3).map(session => (
-                  <div 
-                    key={session.id} 
-                    className={`flex justify-between items-center py-2 px-3 ${currentSession === session.id ? 'bg-gray-800/40' : 'hover:bg-black/20'} rounded-lg cursor-pointer border-l-2 border-black/40`}
-                    onClick={() => {
-                      try {
-                        loadSession(session.id);
-                      } catch (error) {
-                        console.error('Error loading session from main view:', error);
-                      }
-                    }}
-                  >
-                    <div className="flex-grow text-white/80" style={{ 
-                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                      fontSize: '12px' 
-                    }}>{session.title}</div>
-                    <div className="ml-2" style={{ 
-                      fontSize: '10px', 
-                      opacity: 0.4, 
-                      color: 'white', 
-                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
-                    }}>{formatTimeAgo(session.lastUpdated)}</div>
-                  </div>
-                ))
-              )}
-              
-              {/* Show more button - always visible when there are more than 3 conversations for the current workbook */}
-              {getWorkbookSessions(sessions).length > 3 && (
-                <button
-                  onClick={() => setShowPastConversationsView(true)}
-                  className="text-gray-400 hover:text-gray-300 text-xs py-2 px-3 rounded-md hover:bg-black/20 w-full text-center transition-colors"
-                  style={{ 
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-                  }}
-                >
-                  Show more ({getWorkbookSessions(sessions).length - 3} more)
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        // Chat interface with Tailwind CSS styling
-        <>
-          {/* Messages area */}
-          <div 
-            ref={chatContainerRef} 
-            className="flex-1 overflow-y-auto p-4 space-y-4"
-          >
-            {messages.map((message, index) => {
-              // For status messages, render a custom traffic light indicator
-              if (message.role === 'status') {
-                // Determine traffic light color based on status
-                const status = message.status || StatusType.Idle;
-                let bgColor = '';
-                let animate = false;
-                
-                // Status message handling
-                
-                // Use direct color values instead of Tailwind classes
-                switch(status) {
-                  case StatusType.Pending:
-                  case StatusType.Idle:
-                    bgColor = '#eab308'; // yellow-500
-                    animate = true;
-                    break;
-                  case StatusType.Success:
-                    bgColor = '#22c55e'; // green-500
-                    break;
-                  case StatusType.Error:
-                    bgColor = '#ef4444'; // red-500
-                    break;
-                  default:
-                    bgColor = '#6b7280'; // gray-500
-                }
-                
-                return (
-                  <div key={index} className="mb-2">
-                    <div className="flex items-center gap-3 rounded-md px-3 py-2 shadow-md bg-gray-800/70 border border-gray-700">
-                      {/* Pure traffic light circle indicator with direct styling */}
-                      <div className="relative flex items-center justify-center">
-                        <div 
-                          className={`rounded-full ${animate ? 'animate-pulse' : ''}`} 
-                          style={{ 
-                            backgroundColor: bgColor,
-                            width: '16px', 
-                            height: '16px', 
-                            boxShadow: '0 0 10px rgba(255,255,255,0.3)' 
-                          }}
-                        />
-                      </div>
-                      
-                      {/* Status message */}
-                      <span className="text-white" style={{ 
-                        fontSize: 'clamp(10px, 1.25vw, 12px)', 
-                        fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
-                      }}>
-                        {message.content}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-              
-              // For user messages
-              if (message.role === 'user') {
-                return (
-                  <div key={index} className="bg-gray-800/50 rounded-lg p-3 shadow-sm">
-                    <div className="flex items-center">
-                      <div className="bg-blue-500 text-white font-medium px-2 py-0.5 rounded mr-2 flex-shrink-0" style={{ 
-                        fontSize: 'clamp(9px, 1vw, 11px)', 
-                        fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                        border: '1px solid #3b82f6',
-                        boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.5)'
-                      }}>
-                        Me
-                      </div>
-                      <div 
-                        className="text-white/90 rounded px-2 py-1" 
-                        style={{ 
-                          fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                          fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                          backgroundColor: 'rgba(75, 85, 99, 0.3)', // Light grey background (tailwind gray-600 with opacity)
-                          width: '100%'
-                        }}
-                      >
-                        {message.content}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              
-              // For assistant messages
-              if (message.role === 'assistant') {
-                return (
-                  <div key={index} className="rounded-lg p-3">
-                    <div className="text-white/90 whitespace-pre-wrap" style={{ 
-                      fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                      fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
-                    }}>
-                      {message.isStreaming ? (
-                        <TypewriterEffect text={message.content || 'Thinking...'} speed={20} loop={false} />
-                      ) : (
-                        <div className="markdown-content">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-              
-              // For system messages (errors, etc.)
-              return (
-                <div key={index} className="bg-gray-900/60 rounded-lg p-3 text-red-400 shadow-sm" style={{ 
-                  fontSize: 'clamp(11px, 1.5vw, 13px)', 
-                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' 
-                }}>
-                  {message.content}
-                </div>
-              );
-            })}
-            
-            {/* Loading indicator */}
-            {isLoading && !messages.some(m => m.isStreaming) && (
-              <div className="flex items-center justify-center py-4">
-                <div className="animate-pulse text-white/70">Processing...</div>
-              </div>
-            )}
-          </div>
-          
-          {/* Extremely compact approval mode indicator */}
-          <div className="flex items-center justify-end px-2 py-0.5 border-b border-gray-800">
-            <div 
-              className="flex items-center cursor-pointer"
-              onClick={() => {
-                const newState = !approvalEnabled;
-                if (commandInterpreter) {
-                  commandInterpreter.setRequireApproval(newState);
-                }
-                setApprovalEnabled(newState);
-              }}
-            >
-              <div 
-                className="h-2 w-2 rounded-full mr-1"
-                style={{ backgroundColor: approvalEnabled ? '#3b82f6' : '#6b7280' }}
-              />
-              <span 
-                style={{ 
-                  fontSize: '8px', 
-                  color: approvalEnabled ? '#d1d5db' : '#9ca3af',
-                  fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
-                  letterSpacing: '-0.5px'
-                }}
-              >
-                {approvalEnabled ? 'Approval Mode' : 'Auto Mode'}
-              </span>
-            </div>
-          </div>
-          
-          {/* Pending Changes Bar - Simplified to only show global accept/reject */}
-          {approvalEnabled && pendingChanges.length > 0 && (
-            <PendingChangesBar
-              pendingChanges={pendingChanges}
-              onAcceptAll={handleAcceptAll}
-              onRejectAll={handleRejectAll}
-            />
-          )}
-          
-          {/* Input area */}
-          <div className="bg-transparent p-2 mx-3 mb-3 rounded-lg">
-            {/* Attachment preview area */}
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2">
-                {attachments.map((attachment, index) => (
-                  <div key={index} className="relative bg-gray-800 rounded-md p-1 flex items-center">
-                    <span className="text-xs text-white mr-1">
-                      {attachment.type === 'image' ? '🖼️' : '📄'} {attachment.name.length > 15 ? attachment.name.substring(0, 12) + '...' : attachment.name}
-                    </span>
-                    <button 
-                      onClick={() => {
-                        setAttachments(prev => prev.filter((_, i) => i !== index));
-                      }}
-                      className="text-gray-400 hover:text-red-400 ml-1"
-                      aria-label="Remove attachment"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <div className="relative flex items-center border border-gray-700 hover:border-gray-500 focus-within:border-blue-500 rounded-md overflow-hidden">
-              <textarea
-                ref={textareaRef}
-                className="flex-grow bg-transparent px-3 py-2 pr-10 text-white placeholder-white/50 resize-none outline-none min-h-[36px]"
-                placeholder="Ask anything"
-                value={userInput}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyPress}
-                disabled={isLoading || !servicesReady}
-                rows={1}
-                style={{ 
-                  fontSize: 'clamp(11px, 1.5vw, 13px)',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-                }}
-              />
-              
-              {/* Attachment buttons */}
-              <div className="flex items-center mr-1">
-                {/* Image attachment button */}
-              <button
-                  className="text-gray-500 hover:text-white p-1 rounded transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
-                  aria-label="Attach image"
-                  title="Attach image"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                  </svg>
-                </button>
-                
-                {/* PDF attachment button */}
-                <button
-                  className="text-gray-500 hover:text-white p-1 rounded transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
-                  aria-label="Attach PDF"
-                  title="Attach PDF"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                  </svg>
-                </button>
-                
-                {/* Hidden file input */}
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept="image/*,.pdf"
-                  onChange={handleFileChange}
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <button
-                className={`p-1 rounded-md transition-all duration-300 flex items-center justify-center mr-2 ${isLoading ? 'bg-red-600 animate-pulse' : 'text-gray-500 disabled:text-gray-700 hover:text-white hover:bg-gray-700/30'}`}
-                onClick={handleSendMessage}
-                disabled={(!userInput.trim() && attachments.length === 0) || isLoading || !servicesReady}
-                aria-label={isLoading ? "Processing" : "Send message"}
-                type="button"
-                style={{ 
-                  width: '24px', 
-                  height: '24px',
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                {isLoading ? (
-                  // Pulsing red square when loading
-                  <div className="w-3 h-3 bg-white rounded-sm"></div>
-                ) : (
-                  // Arrow icon when not loading
-                  <svg style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-          {/* Removed the New Conversation button */}
-        </>
-      )}
+      {/* Messages area */}
+      <ChatMessageList 
+        messages={messages}
+        isLoading={isLoading}
+        isStreaming={isStreaming}
+      />
+      
+      {/* Input area */}
+      <ChatInputArea 
+        userInput={userInput}
+        setUserInput={setUserInput}
+        handleSendMessage={handleSendMessage}
+        isLoading={isLoading}
+        servicesReady={servicesReady}
+        attachments={attachments}
+        handleFileChange={handleFileChange}
+        removeAttachment={removeAttachment}
+      />
     </div>
   );
 };

@@ -111,6 +111,8 @@ export function injectStyles(): () => void {
     
     .markdown-content ol {
       list-style-type: decimal !important;
+      padding-left: 1.5em !important;
+      counter-reset: item;
     }
     
     /* List items */
@@ -126,6 +128,23 @@ export function injectStyles(): () => void {
       margin-left: 0 !important;
       padding-left: 0 !important;
       display: list-item !important;
+      line-height: 1.5 !important;
+    }
+    
+    /* Custom styling for ordered lists to fix number formatting */
+    .markdown-content ol > li {
+      list-style: none !important;
+      position: relative !important;
+    }
+    
+    .markdown-content ol > li::before {
+      counter-increment: item;
+      content: counter(item) ".";
+      position: absolute !important;
+      left: -1.5em !important;
+      width: 1.2em !important;
+      text-align: right !important;
+      font-weight: normal !important;
     }
     
     /* Paragraphs inside list items */

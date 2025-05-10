@@ -17,7 +17,7 @@ import {
 import { VersionHistoryService } from './VersionHistoryService';
 import { ActionRecorder } from './ActionRecorder';
 import { VersionRestorer } from './VersionRestorer';
-import { ClientExcelCommandInterpreter } from '../ClientExcelCommandInterpreter';
+import { ClientExcelCommandInterpreter } from '../actions/ClientExcelCommandInterpreter';
 import { multimodalAnalysisService } from '../document-understanding/MultimodalAnalysisService';
 
 /**

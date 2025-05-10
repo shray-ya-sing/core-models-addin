@@ -1,6 +1,6 @@
 // PART 1: IMPORTS AND CLASS DEFINITION
-import { MetadataChunk, SheetState, WorkbookState } from '../models/CommandModels';
-import { RangeDetectionResult } from '../models/RangeModels';
+import { MetadataChunk, SheetState, WorkbookState } from '../../models/CommandModels';
+import { RangeDetectionResult } from '../../models/RangeModels';
 import { RangeDetector } from './RangeDetector';
 import { SpreadsheetChunkCompressor } from './SpreadsheetChunkCompressor';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';

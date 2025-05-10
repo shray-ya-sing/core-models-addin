@@ -5,8 +5,8 @@
  */
 
 import * as React from 'react';
-import { ClientExcelCommandInterpreter } from '../services/ClientExcelCommandInterpreter';
-import { PendingChangesTracker } from '../services/PendingChangesTracker';
+import { ClientExcelCommandInterpreter } from '../services/actions/ClientExcelCommandInterpreter';
+import { PendingChangesTracker } from '../services/pending-changes/PendingChangesTracker';
 
 interface ApprovalSettingsViewProps {
   commandInterpreter: ClientExcelCommandInterpreter;

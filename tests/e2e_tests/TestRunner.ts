@@ -2,8 +2,8 @@
  * Test Runner
  * Executes test scenarios and captures results
  */
-import { ClientQueryProcessor } from "../../src/client/services/ClientQueryProcessor";
-import { ClientExcelCommandInterpreter } from "../../src/client/services/ClientExcelCommandInterpreter";
+import { ClientQueryProcessor } from "../../src/client/services/request-processing/ClientQueryProcessor";
+import { ClientExcelCommandInterpreter } from "../../src/client/services/actions/ClientExcelCommandInterpreter";
 import { 
   AllTestScenarios, 
   ExpectedOutcome, 

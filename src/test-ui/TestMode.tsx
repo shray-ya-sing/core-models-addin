@@ -4,8 +4,8 @@
  */
 import * as React from "react";
 import { useState, useEffect } from "react";
-import { ClientQueryProcessor } from "../client/services/ClientQueryProcessor";
-import { ClientExcelCommandInterpreter } from "../client/services/ClientExcelCommandInterpreter";
+import { ClientQueryProcessor } from "../client/services/request-processing/ClientQueryProcessor";
+import { ClientExcelCommandInterpreter } from "../client/services/actions/ClientExcelCommandInterpreter";
 import TestUI from "./TestUI";
 
 // Keyboard shortcut for toggling test mode (Ctrl+Shift+T)

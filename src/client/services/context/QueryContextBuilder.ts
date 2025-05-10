@@ -1,8 +1,7 @@
-import { MetadataChunk, QueryContext, QueryType } from '../models/CommandModels';
+import { MetadataChunk, QueryContext, QueryType } from '../../models/CommandModels';
 import { ClientWorkbookStateManager } from './ClientWorkbookStateManager';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';
 import { ChunkLocatorService } from './ChunkLocatorService';
-import { multimodalAnalysisService } from './document-understanding/MultimodalAnalysisService';
 
 /**
  * Builds query contexts by selecting and assembling relevant chunks
@@ -100,7 +99,7 @@ export class QueryContextBuilder {
    * Used as a fallback when specific sheets can't be identified
    * @returns A query context with all sheets
    */
-  private async buildFullWorkbookContext(): Promise<QueryContext> {
+  public async buildFullWorkbookContext(): Promise<QueryContext> {
     console.log('%c Building full workbook context', 'color: #9b59b6');
     
     // Get all available sheet chunks
@@ -144,14 +143,28 @@ export class QueryContextBuilder {
   }
 
   /**
-   * Ensure all sheets in the workbook are captured and cached
-   * @param forceRefresh Whether to force refresh all chunks
+   * Ensure all sheets are cached
+   * @param force Force recaching even if already cached
    */
-  private async ensureAllSheetsCached(forceRefresh: boolean): Promise<void> {
+  public async ensureAllSheetsCached(force: boolean = false): Promise<void> {
+    // Get current sheet chunks and log cache state
+    const cachedChunks = this.metadataCache.getAllSheetChunks();
+    console.log(`%c Cache check: ${cachedChunks.length} sheet chunks found in cache`, 'color: #3498db');
+    
     // If we're not forcing a refresh and we have cached chunks, we're done
-    if (!forceRefresh && this.metadataCache.getAllSheetChunks().length > 0) {
-      console.log('%c Using cached sheet chunks', 'color: #3498db');
+    if (!force && cachedChunks.length > 0) {
+      console.log('%c Using existing cached sheet chunks, skipping re-cache', 'color: #3498db; font-weight: bold');
+      // Log the first few cached sheet names for debugging
+      const sheetNames = cachedChunks.slice(0, 3).map(chunk => chunk.id.replace('Sheet:', '')).join(', ');
+      console.log(`%c Cached sheets include: ${sheetNames}${cachedChunks.length > 3 ? '...' : ''}`, 'color: #3498db');
       return;
+    }
+    
+    // Log reason for caching
+    if (force) {
+      console.log('%c Force flag is true, re-caching all sheets', 'color: #f39c12; font-weight: bold');
+    } else {
+      console.log('%c No cached sheets found, performing initial caching', 'color: #f39c12; font-weight: bold');
     }
     
     console.log('%c Capturing all sheets as chunks', 'color: #f39c12');
@@ -305,50 +318,9 @@ export class QueryContextBuilder {
     try {
       // Get the workbook ID from the active workbook
       const workbookId = this.workbookStateManager.getWorkbookId();
-      
-      if (workbookId) {
-        // Get the formatting data for this specific workbook
-        const formattingData = multimodalAnalysisService.getWorkbookFormattingData(workbookId);
-        
-        if (formattingData) {
-          console.log(`Including workbook-specific formatting protocol for workbook: ${workbookId}`);
-          compressedWorkbook.formattingProtocol = formattingData.formattingProtocol;
-          
-          // Also include the formatting metadata which contains additional context
-          compressedWorkbook.formattingMetadata = formattingData.formattingMetadata;
-        } else {
-          // Fall back to the legacy cache if no workbook-specific protocol is available
-          const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
-          if (formattingProtocol) {
-            console.log('Including legacy formatting protocol in context');
-            compressedWorkbook.formattingProtocol = formattingProtocol;
-          } else {
-            console.log('No formatting protocol available for inclusion in context');
-          }
-        }
-      } else {
-        console.log('No workbook ID available, cannot retrieve workbook-specific formatting protocol');
-        
-        // Fall back to the legacy cache
-        const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
-        if (formattingProtocol) {
-          console.log('Including legacy formatting protocol in context');
-          compressedWorkbook.formattingProtocol = formattingProtocol;
-        }
-      }
     } catch (error) {
       console.warn('Error getting formatting protocol for context:', error);
-      
-      // In case of error, try to fall back to the legacy cache
-      try {
-        const formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
-        if (formattingProtocol) {
-          console.log('Including legacy formatting protocol after error');
-          compressedWorkbook.formattingProtocol = formattingProtocol;
-        }
-      } catch (fallbackError) {
-        console.error('Error getting legacy formatting protocol:', fallbackError);
-      }
+    
     }
     
     // Add diagnostics to help debug issues

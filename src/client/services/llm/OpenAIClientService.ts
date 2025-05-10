@@ -26,6 +26,9 @@ export enum ModelType {
 /**
  * Client-side service for interacting with the OpenAI API
  */
+// Import the ExcelCommandPlan and ExcelOperation types
+import { ExcelCommandPlan, ExcelOperation } from '../../models/ExcelOperationModels';
+
 export class OpenAIClientService {
   private openai: OpenAI;
   private debugMode: boolean = true;
@@ -34,8 +37,8 @@ export class OpenAIClientService {
   // Model configuration
   private models = {
     [ModelType.Light]: 'gpt-3.5-turbo',
-    [ModelType.Standard]: 'gpt-4-turbo',
-    [ModelType.Advanced]: 'gpt-4-vision-preview'
+    [ModelType.Standard]: 'gpt-4o-mini',
+    [ModelType.Advanced]: 'gpt-4o-mini'
   };
   
   /**
@@ -655,6 +658,329 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
     } catch (error) {
       console.error('Error generating simplified explanation:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Generate Excel operations using OpenAI as a fallback when Anthropic fails
+   * @param query User query for generating operations
+   * @param workbookContext Context information about the workbook
+   * @param chatHistory Previous chat history
+   * @param attachments Optional image attachments
+   * @param isRetry Whether this is a retry attempt after a failed parsing
+   * @returns A plan with Excel operations
+   */
+  public async generateExcelOperations(
+    query: string,
+    workbookContext: string,
+    chatHistory: Array<{ role: string; content: string }>,
+    attachments?: Attachment[],
+    isRetry: boolean = false
+  ): Promise<ExcelCommandPlan> {
+    try {
+      // Parse the workbook context to extract formatting protocol if available
+      let formattingProtocol = null;
+      try {
+        const parsedContext = JSON.parse(workbookContext);
+        if (parsedContext.formattingProtocol) {
+          formattingProtocol = parsedContext.formattingProtocol;
+        }
+      } catch (parseError) {
+        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
+      }
+      
+      // Build the system prompt
+      const systemPrompt = this.buildExcelOperationsSystemPrompt(formattingProtocol, isRetry);
+      
+      // Filter the chat history to only include the last 5 messages
+      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
+      const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
+      
+      // Convert messageHistory to OpenAI message format
+      const openaiMessages = messageHistory.map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content
+      }));
+      
+      // Add the system prompt as the first message
+      openaiMessages.unshift({
+        role: 'system' as any, // Type assertion to handle OpenAI's message types
+        content: systemPrompt
+      });
+      
+      // Create the final user message
+      const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
+      
+      // Add attachments if they exist
+      let finalUserContent: any = userPrompt; // Default to simple string content
+      
+      if (attachments && attachments.length > 0) {
+        // For OpenAI, we need to format the content array differently than Anthropic
+        const contentArray: any[] = [{ type: 'text', text: userPrompt }];
+        
+        for (const attachment of attachments) {
+          if (attachment.type === 'image') {
+            contentArray.push({
+              type: 'image_url',
+              image_url: {
+                url: `data:${attachment.mimeType};base64,${attachment.content}`
+              }
+            });
+          }
+          // Note: OpenAI doesn't directly support PDF attachments like Anthropic does
+        }
+        
+        // Add the multimodal message
+        openaiMessages.push({
+          role: 'user',
+          content: contentArray as any // Type assertion for OpenAI's content types
+        });
+      } else {
+        // Add text-only message
+        openaiMessages.push({
+          role: 'user',
+          content: userPrompt
+        });
+      }
+      
+      // Use GPT-4 for better JSON generation
+      const modelToUse = this.models[ModelType.Advanced];
+      
+      // Make the API call
+      const response = await this.openai.chat.completions.create({
+        model: modelToUse,
+        messages: openaiMessages as any,
+        max_tokens: 4000,
+        temperature: isRetry ? 0.1 : 0.2, // Lower temperature for retry attempts
+        response_format: { type: 'json_object' } // Enforce JSON response format
+      });
+      
+      // Extract the response content
+      const responseContent = response.choices[0]?.message?.content || '{"description":"Error generating operations","operations":[]}';
+      
+      try {
+        // Parse the JSON response
+        const plan = JSON.parse(responseContent) as ExcelCommandPlan;
+        
+        // Validate the operations
+        this.validateOperations(plan.operations);
+        
+        return {
+          description: plan.description || 'Excel operations',
+          operations: plan.operations || []
+        };
+      } catch (parseError) {
+        console.error('Failed to parse operations JSON from OpenAI:', parseError);
+        
+        // If this is not already a retry, try again with more explicit instructions
+        if (!isRetry) {
+          console.log('Retrying operation generation with OpenAI using explicit JSON instructions');
+          return this.generateExcelOperations(query, workbookContext, chatHistory, attachments, true);
+        }
+        
+        // If this is already a retry, return an empty plan
+        return {
+          description: 'Error parsing operations from OpenAI',
+          operations: []
+        };
+      }
+    } catch (error: any) {
+      console.error('Error generating Excel operations with OpenAI:', error);
+      return {
+        description: 'Error generating operations with OpenAI',
+        operations: []
+      };
+    }
+  }
+  
+  /**
+   * Build the system prompt for generating Excel operations
+   * @param formattingProtocol Optional formatting protocol to include in the prompt
+   * @param isRetry Whether this is a retry attempt after a failed parsing
+   * @returns The system prompt
+   */
+  private buildExcelOperationsSystemPrompt(formattingProtocol: any = null, isRetry: boolean = false): string {
+    let basePrompt = `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
+
+CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.`;
+    
+    // Add more explicit instructions for retry attempts
+    if (isRetry) {
+      basePrompt = `${basePrompt}
+
+CRITICAL JSON FORMATTING INSTRUCTION: Your previous response contained invalid JSON that could not be parsed. You MUST respond with ONLY a valid JSON object. Do not include any explanations, notes, or text outside the JSON object. The JSON must exactly follow the schema provided below with no extra or missing fields. Ensure all quotes, brackets, and commas are properly placed.`;
+    }
+    
+    // Add formatting protocol instructions if available
+    if (formattingProtocol) {
+      basePrompt += `
+
+IMPORTANT: When generating operations that involve formatting or styling, follow the user's existing formatting conventions as described below. This ensures consistency with the user's workbook design.
+
+FORMATTING PROTOCOL:
+`;
+      
+      // Add color coding instructions
+      if (formattingProtocol.colorCoding) {
+        basePrompt += `
+COLOR CODING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.colorCoding.inputs) {
+          basePrompt += `- Input cells: ${formattingProtocol.colorCoding.inputs}
+`;
+        }
+        if (formattingProtocol.colorCoding.calculations) {
+          basePrompt += `- Calculation cells: ${formattingProtocol.colorCoding.calculations}
+`;
+        }
+        if (formattingProtocol.colorCoding.hardcodedValues) {
+          basePrompt += `- Hardcoded values: ${formattingProtocol.colorCoding.hardcodedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.linkedValues) {
+          basePrompt += `- Linked values: ${formattingProtocol.colorCoding.linkedValues}
+`;
+        }
+        if (formattingProtocol.colorCoding.headers) {
+          basePrompt += `- Headers: ${formattingProtocol.colorCoding.headers}
+`;
+        }
+        if (formattingProtocol.colorCoding.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.colorCoding.totals}
+`;
+        }
+      }
+      
+      // Add number formatting instructions
+      if (formattingProtocol.numberFormatting) {
+        basePrompt += `
+NUMBER FORMATTING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.numberFormatting.currency) {
+          basePrompt += `- Currency: ${formattingProtocol.numberFormatting.currency}
+`;
+        }
+        if (formattingProtocol.numberFormatting.percentage) {
+          basePrompt += `- Percentage: ${formattingProtocol.numberFormatting.percentage}
+`;
+        }
+        if (formattingProtocol.numberFormatting.date) {
+          basePrompt += `- Date: ${formattingProtocol.numberFormatting.date}
+`;
+        }
+        if (formattingProtocol.numberFormatting.general) {
+          basePrompt += `- General: ${formattingProtocol.numberFormatting.general}
+`;
+        }
+      }
+      
+      // Add border styling instructions
+      if (formattingProtocol.borderStyles) {
+        basePrompt += `
+BORDER STYLING CONVENTIONS:
+`;
+        
+        if (formattingProtocol.borderStyles.tables) {
+          basePrompt += `- Tables: ${formattingProtocol.borderStyles.tables}
+`;
+        }
+        if (formattingProtocol.borderStyles.sections) {
+          basePrompt += `- Sections: ${formattingProtocol.borderStyles.sections}
+`;
+        }
+        if (formattingProtocol.borderStyles.totals) {
+          basePrompt += `- Totals: ${formattingProtocol.borderStyles.totals}
+`;
+        }
+      }
+      
+      basePrompt += `
+When creating new elements in the workbook, ensure they follow these formatting conventions for consistency.`;
+    }
+    
+    basePrompt += `
+
+OUTPUT FORMAT:
+You must respond with a JSON object that follows this schema:
+{
+  "description": string,  // A brief description of what these operations will do
+  "operations": [         // Array of operations to execute
+    {
+      "op": string,       // Operation type (see allowed values below)
+      ...                 // Additional fields specific to the operation type
+    }
+  ]
+}`;
+    
+    return basePrompt + `
+
+ALLOWED OPERATION TYPES:
+- set_value: Set a value in a cell
+- add_formula: Add a formula to a cell
+- create_chart: Create a chart
+- format_range: Format a range of cells
+- clear_range: Clear a range of cells
+- create_table: Create a table
+- sort_range: Sort a range
+- filter_range: Filter a range
+- create_sheet: Create a new worksheet
+- delete_sheet: Delete a worksheet
+- copy_range: Copy a range to another location
+- merge_cells: Merge cells
+- unmerge_cells: Unmerge cells
+- conditional_format: Add conditional formatting
+- add_comment: Add a comment to a cell
+- set_freeze_panes: Freeze rows or columns
+- set_active_sheet: Set the active worksheet
+- set_print_settings: Set print settings
+- set_page_setup: Set page setup
+- export_to_pdf: Export worksheet to PDF
+- set_worksheet_settings: Set worksheet settings
+- format_chart: Format a chart
+
+OPERATION SCHEMAS:
+
+1. set_value:
+{
+  "op": "set_value",
+  "target": string,       // Cell reference (e.g. "Sheet1!A1")
+  "value": any            // Value to set (string, number, boolean)
+}
+
+2. add_formula:
+{
+  "op": "add_formula",
+  "target": string,       // Cell reference (e.g. "Sheet1!A1")
+  "formula": string       // Formula to add (e.g. "=SUM(B1:B10)")
+}
+
+3. create_chart:
+{
+  "op": "create_chart",
+  "range": string,        // Range for chart data (e.g. "Sheet1!A1:D10")
+  "type": string,         // Chart type (e.g. "columnClustered", "line", "pie")
+  "title": string,        // Optional chart title
+  "position": string      // Optional position (e.g. "Sheet1!F1")
+}`;
+  }
+  
+  /**
+   * Validate the operations to ensure they are well-formed
+   * @param operations The operations to validate
+   */
+  private validateOperations(operations: ExcelOperation[]): void {
+    if (!operations || !Array.isArray(operations)) {
+      throw new Error('Operations must be an array');
+    }
+    
+    for (const operation of operations) {
+      if (!operation.op) {
+        throw new Error('Operation missing "op" field');
+      }
+      
+      // Additional validation could be added here based on operation type
     }
   }
 }

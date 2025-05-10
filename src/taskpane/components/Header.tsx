@@ -1,19 +1,39 @@
 import * as React from "react";
 import { useState } from "react";
 import { PlusIcon, ClockIcon, BookOpenIcon, MoreHorizontalIcon, XIcon, GitBranchIcon, BeakerIcon } from "lucide-react";
+import {VersionHistoryView} from "../../client/components/VersionHistoryView";
 
 export interface HeaderProps {
-  onNewConversation: () => void;
-  onShowPastConversations: () => void;
-  onShowVersionHistory?: () => void;
   onToggleTestMode?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onNewConversation, onShowPastConversations, onShowVersionHistory, onToggleTestMode }) => {
+const Header: React.FC<HeaderProps> = ({ onToggleTestMode }) => {
   const [showNewConversationTooltip, setShowNewConversationTooltip] = useState(false);
   const [showPastConversationsTooltip, setShowPastConversationsTooltip] = useState(false);
   const [showVersionHistoryTooltip, setShowVersionHistoryTooltip] = useState(false);
   const [showTestModeTooltip, setShowTestModeTooltip] = useState(false);
+
+  // Add state to control visibility of the version history view
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // Function to toggle the version history view
+  const onShowVersionHistory = () => {
+    setShowVersionHistory(true);
+  };
+  
+  // Function to close the version history view
+  const onCloseVersionHistory = () => {
+    setShowVersionHistory(false);
+  };
+
+  const onNewConversation = () => {
+    
+  };
+
+  const onShowPastConversations = () => {
+    
+  };
+
   
   return (
     <header className="flex justify-between items-center py-1 px-2 bg-transparent z-10">

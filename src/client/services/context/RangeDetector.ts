@@ -2,9 +2,9 @@
  * Range Detector for identifying and analyzing key ranges within Excel sheets
  * This is part of the Phase 1 granular workbook state system
  */
-import { RangeDetectionResult, RangeInfo, RangeType, createRangeChunk, formatRangeId } from '../models/RangeModels';
-import { MetadataChunk, SheetState } from '../models/CommandModels';
-import { parseA1 } from '../utils/ExcelUtils';
+import { RangeDetectionResult, RangeInfo, RangeType, createRangeChunk, formatRangeId } from '../../models/RangeModels';
+import { MetadataChunk, SheetState } from '../../models/CommandModels';
+import { parseA1 } from '../../utils/ExcelUtils';
 
 /**
  * Service to detect and analyze important ranges within sheets

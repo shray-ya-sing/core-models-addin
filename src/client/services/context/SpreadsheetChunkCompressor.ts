@@ -4,7 +4,7 @@ import {
   MetadataChunk, 
   SheetState, 
   WorkbookMetrics 
-} from '../models/CommandModels';
+} from '../../models/CommandModels';
 import * as CryptoJS from 'crypto-js';
 
 /**

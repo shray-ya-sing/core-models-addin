@@ -783,4 +783,4 @@ const VersionHistoryView: React.FC<VersionHistoryViewProps> = ({ onClose, workbo
   );
 }
     
-export default VersionHistoryView;
+export { VersionHistoryView };

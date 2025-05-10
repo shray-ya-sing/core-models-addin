@@ -1,33 +1,24 @@
 // src/client/services/ClientQueryProcessor.ts
 import { v4 as uuidv4 } from 'uuid';
-import {
-  ClientAnthropicService,
-  ModelType
-} from './ClientAnthropicService';
-import { ClientKnowledgeBaseService } from './ClientKnowledgeBaseService';
-import { ClientWorkbookStateManager } from './ClientWorkbookStateManager';
-import { ClientSpreadsheetCompressor } from './ClientSpreadsheetCompressor';
-import { ClientCommandManager } from './ClientCommandManager';
-import { ClientExcelOperationGenerator } from './ClientExcelOperationGenerator';
-import { ExcelCommandPlan } from '../models/ExcelOperationModels';
+import { ClientAnthropicService } from "../llm/ClientAnthropicService";
+import { ClientKnowledgeBaseService } from "../ClientKnowledgeBaseService";
+import { ClientCommandManager } from "../actions/ClientCommandManager";
+import { GreetingsService } from "../greetings/GreetingsService";
+import { ClientExcelOperationGenerator } from '../actions/ClientExcelOperationGenerator';
+import { ExcelCommandPlan } from '../../models/ExcelOperationModels';
 import {
   Command,
   CommandStatus,
-  CompressedWorkbook,
   QueryType as CommandModelQueryType,
-  SheetState,
-  WorkbookState,
   OperationType
-} from '../models/CommandModels';
+} from '../../models/CommandModels';
 import {
   ProcessStage,
   ProcessStatus,
   ProcessStatusManager
-} from '../models/ProcessStatusModels';
-import { QueryContextBuilder } from './QueryContextBuilder';
-import { ChunkLocatorService } from './ChunkLocatorService';
-import { EmbeddingStore, SimilaritySearchResult } from './ChunkLocatorService'; // Temporary import, will be replaced with actual implementation
-
+} from '../../models/ProcessStatusModels';
+import { OpenAIClientService } from '../llm/OpenAIClientService';
+import { LoadContextService } from '../context/LoadContextService';
 
 
 
@@ -76,77 +67,35 @@ export interface ChatHistoryMessage {
 export class ClientQueryProcessor {
   private anthropic: ClientAnthropicService;
   private kbService: ClientKnowledgeBaseService | null;
-  private workbookManager: ClientWorkbookStateManager | null;
-  private compressor: ClientSpreadsheetCompressor | null;
+  private contextService: LoadContextService | null;
   private commandManager: ClientCommandManager | null;
   private currentQuerySteps: QueryStep[] = [];
-  // Query context builder for more efficient state capture
-  private queryContextBuilder: QueryContextBuilder;
-  // Chunk locator service for identifying relevant chunks
-  private chunkLocator: ChunkLocatorService | null = null;
-  // Embedding store for similarity search
-  private embeddingStore: EmbeddingStore | null = null;
-  // Whether advanced chunk location is enabled
-  private useAdvancedChunkLocation: boolean = true;
+  private openai?: OpenAIClientService;
+  private useOpenAIFallback: boolean;
+  // Greetings service for handling simple greetings
+  private greetingsService: GreetingsService = new GreetingsService();
+
+  
 
   constructor(params: {
     anthropic: ClientAnthropicService;
     kbService?: ClientKnowledgeBaseService | null;
-    workbookStateManager?: ClientWorkbookStateManager | null;
-    compressor?: ClientSpreadsheetCompressor | null;
+    contextService?: LoadContextService | null;
     commandManager?: ClientCommandManager | null;
-    useAdvancedChunkLocation?: boolean;
+    openai?: OpenAIClientService;
+    useOpenAIFallback?: boolean;
   }) {
     this.anthropic = params.anthropic;
     this.kbService = params.kbService ?? null;
-    this.workbookManager = params.workbookStateManager ?? null;
-    this.compressor = params.compressor ?? null;
+    this.contextService = params.contextService ?? null;
     this.commandManager = params.commandManager ?? null;
     this.currentQuerySteps = [];
-    this.useAdvancedChunkLocation = params.useAdvancedChunkLocation ?? true;
-    
-    // Create the query context builder
-    this.queryContextBuilder = new QueryContextBuilder(
-      this.workbookManager, 
-      this.workbookManager.getMetadataCache(),
-      this.chunkLocator);
-    
-    // Initialize advanced chunk location components if enabled
-    if (this.useAdvancedChunkLocation && this.workbookManager) {
-      this.initializeChunkLocator();
-    }
+    this.openai = params.openai;
+    this.useOpenAIFallback = params.useOpenAIFallback !== undefined ? params.useOpenAIFallback : true;
+
   }
   
-  /**
-   * Initialize the chunk locator service
-   */
-  private async initializeChunkLocator(): Promise<void> {
-    console.log('%c Initializing advanced chunk location components', 'background: #8e44ad; color: #ecf0f1; font-size: 12px; padding: 2px 5px;');
-    
-    try {
-      // In a future implementation, we'd create a real EmbeddingStore
-      // For now, we'll use our simple placeholder implementation
-      this.embeddingStore = {} as EmbeddingStore; // Placeholder
-      
-      // Create the chunk locator service
-      this.chunkLocator = new ChunkLocatorService({
-        metadataCache: this.workbookManager.getMetadataCache(),
-        embeddingStore: this.embeddingStore,
-        dependencyAnalyzer: this.workbookManager.getDependencyAnalyzer(),
-        anthropicService: this.anthropic,
-        activeSheetName: this.workbookManager.getActiveSheetName()
-      });
-      
-      // Attach the chunk locator to the query context builder
-      this.queryContextBuilder.setChunkLocator(this.chunkLocator);
-      
-      console.log('%c Advanced chunk location components initialized successfully', 'color: #2ecc71');
-    } catch (error) {
-      console.error('Error initializing chunk locator:', error);
-      console.log('%c Falling back to standard chunk identification', 'color: #e74c3c');
-      this.useAdvancedChunkLocation = false;
-    }
-  }
+
 
 
   /* -----------------------  Public Entry Point  ----------------------- */
@@ -159,10 +108,74 @@ export class ClientQueryProcessor {
   ): Promise<QueryProcessorResult> {
     const processId = uuidv4();
     const status = ProcessStatusManager.getInstance();
+
+    status.updateStatus(processId, {
+      stage: ProcessStage.ResponseGeneration,
+      status: ProcessStatus.Pending,
+      message: 'Preparing internal resources'
+    });
     
     console.group(`%c Query Processing (ID: ${processId.substring(0, 8)})`, 'background: #222; color: #f39c12; font-size: 14px; padding: 3px 6px;');
     console.log(`%c Received query: "${userQuery}"`, 'color: #2c3e50; font-size: 13px; font-weight: bold;');
-    console.time('Query processing time');
+    console.time('Query processing time');    
+
+    status.updateStatus(processId, {
+      stage: ProcessStage.ResponseGeneration,
+      status: ProcessStatus.Pending,
+      message: 'Generating response'
+    });
+
+    // Check if this is a simple greeting before doing expensive LLM operations
+    if (this.greetingsService.isGreeting(userQuery) && streamingCB) {
+      const response = this.greetingsService.handleGreeting(userQuery, streamingCB, processId);
+      console.timeEnd('Query processing time');
+      console.groupEnd();
+      return {
+        processId,
+        assistantMessage: response
+      };
+    }
+    
+    // Set up progress update interval for UI responsiveness
+    let progressUpdateCount = 0;
+    const progressMessages = [
+      "Let me think about that for a second before responding... I need to properly understand the workbook and its data",
+      "\nI'm processing workbook data right now to understand how it's built out",
+      "\nI'm examining worksheet structure for all the worksheets in the file...",
+      "\nI'm retrieving relevant context...",
+      "\nI'm preparing my final response...",
+      "\nI'm sorry, this is taking me longer than expected... Give me a moment...",
+      "\nI'm running into trouble analyzing the workbook. Please give me some more time to try again"
+    ];
+    
+    // Set up tracking for active streaming
+    let hasStartedStreaming = false;
+    let lastStreamActivityTime = Date.now();
+    
+    // Create a wrapper for the streaming callback that tracks activity
+    const streamingWrapper = streamingCB ? (chunk: string) => {
+      // If this is an actual content chunk (not just a progress message)
+      if (chunk.length > 5 && !chunk.startsWith('\n')) {
+        hasStartedStreaming = true;
+      }
+      
+      // Update the last activity timestamp
+      lastStreamActivityTime = Date.now();
+      
+      // Call the original callback
+      streamingCB(chunk);
+    } : undefined;
+  
+    
+    // Start progress updates if streaming is enabled
+    let progressInterval: NodeJS.Timeout | null = null;
+    if (streamingWrapper) {
+      progressInterval = setInterval(() => {
+        const message = progressMessages[progressUpdateCount % progressMessages.length];
+        streamingWrapper(`\n${message}`);
+        progressUpdateCount++;
+      }, 2500); // Send a new message every 2.5 seconds
+    }
 
     /* 1. Classify query with the LLM */
     const queryClassification = await this.classifyQueryAndDecompose(
@@ -170,6 +183,12 @@ export class ClientQueryProcessor {
       processId,
       chatHistory
     );
+
+    status.updateStatus(processId, {
+      stage: ProcessStage.ResponseGeneration,
+      status: ProcessStatus.Success,
+      message: 'Generated plan'
+    });
 
     if (!queryClassification) {
       console.log(`%c No steps found in the query classification result`, 'background: #c0392b; color: #fff; font-size: 12px; padding: 2px 5px;');
@@ -180,12 +199,9 @@ export class ClientQueryProcessor {
         assistantMessage: "I couldn't process your request. Please try again with a clearer instruction."
       };
     }
-    
-    // Track results from all steps
-    let lastResult: QueryProcessorResult | null = null;
-    let combinedMessage = "";
-    let command: Command | null = null;
 
+    let combinedMessage = "";
+    
     // Process steps sequentially with proper async/await
     for (const step of queryClassification.steps) {
       const queryType = step.step_type;
@@ -200,7 +216,20 @@ export class ClientQueryProcessor {
         if (queryType === QueryType.Greeting) {
           // For greetings, no need to capture workbook state
           console.log(`%c Processing greeting: "${query}"`, `background: ${this.getClassificationColor(QueryType.Greeting)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-          lastResult = await this.handleGreeting(query, streamingCB, processId, attachments);
+          
+          // Clear the progress interval before sending the final response
+          if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+          }
+          
+          const response = this.greetingsService.handleGreeting(query, streamingWrapper, processId);
+          console.timeEnd('Query processing time');
+          console.groupEnd();
+          return {
+            processId,
+            assistantMessage: response
+          };
         } 
         else if (
           queryType === QueryType.WorkbookQuestion ||
@@ -209,105 +238,216 @@ export class ClientQueryProcessor {
           queryType === QueryType.WorkbookCommandWithKB
         ) {
           // Use our contextBuilder to get chunks via the query-dependent selection
-          const queryContext = await this.queryContextBuilder.buildContextForQuery(
+          const queryContext = await this.contextService.getQueryContextBuilder().buildContextForQuery(
             this.convertToCommandModelQueryType(queryType as QueryType),
             chatHistory,
             query
           );
           
           // Convert the context to JSON format
-          const workbookJSON = this.queryContextBuilder.contextToJson(queryContext);
+          const workbookJSON = this.contextService.getQueryContextBuilder().contextToJson(queryContext);
           
           // Route to appropriate handler based on query type
           if (queryType === QueryType.WorkbookQuestion) {
             console.log(`%c Processing workbook question: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestion)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-            lastResult = await this.answerWorkbookQuestion(
+            
+            // Stop sending new progress messages
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+            
+            const result = await this.answerWorkbookQuestion(
               query,
               workbookJSON,
-              streamingCB,
+              streamingWrapper,
               processId,
               chatHistory,
               attachments
             );
+            combinedMessage += result.assistantMessage;
           } else if (queryType === QueryType.WorkbookQuestionWithKB) {
             console.log(`%c Processing workbook question with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookQuestionWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-            lastResult = await this.answerWorkbookQuestionWithKB(
+            
+            // Clear the progress interval before sending the final response
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+            
+            const result = await this.answerWorkbookQuestionWithKB(
               query,
               workbookJSON,
-              streamingCB,
+              streamingWrapper,
               processId,
               chatHistory,
               attachments
-            );
+            );  
+            combinedMessage = result.assistantMessage;
           } else if (queryType === QueryType.WorkbookCommand) {
             console.log(`%c Processing workbook command: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommand)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-            lastResult = await this.runWorkbookCommand(
+            
+            // Clear the progress interval before sending the final response
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+            
+            const result = await this.runWorkbookCommand(
               query,
               workbookJSON,
               processId,
               chatHistory,
               attachments
             );
+            combinedMessage+=result.assistantMessage;
           } else if (queryType === QueryType.WorkbookCommandWithKB) {
             console.log(`%c Processing workbook command with KB: "${query}"`, `background: ${this.getClassificationColor(QueryType.WorkbookCommandWithKB)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-            lastResult = await this.runWorkbookCommand(
+            
+            // Clear the progress interval before sending the final response
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+            
+            const result = await this.runWorkbookCommand(
               query,
               workbookJSON,
               processId,
               chatHistory,
               attachments
             );
+            combinedMessage+=result.assistantMessage;
           }
         }
         else if (queryType === QueryType.Unknown) {
           console.log(`%c Unable to classify query: "${query}"`, `background: ${this.getClassificationColor(QueryType.Unknown)}; color: #fff; font-size: 12px; padding: 2px 5px;`);
-          lastResult = {
+          
+          // Clear the progress interval before sending the final response
+          if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+          }
+          
+          const result = {
             processId,
             assistantMessage: "I'm sorry, I'm not sure how to handle that request yet."
           };
-        }
-
-        // Store the command from the last step that has one
-        if (lastResult && lastResult.command) {
-          command = lastResult.command;
-        }
-
-        // Accumulate messages if there's a result
-        if (lastResult && lastResult.assistantMessage) {
-          if (combinedMessage.length > 0) {
-            combinedMessage += "\n\n";
-          }
-          combinedMessage += lastResult.assistantMessage;
+          
         }
       } catch (error) {
         console.error(`Error processing step ${stepIndex}:`, error);
-        combinedMessage += `\n\nI encountered an error while processing step ${stepIndex}: ${error.message}`;
+        
+        // Clear the progress interval and execution timeout
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+
+        if (combinedMessage=='') {
+          combinedMessage = "\n\nI'm sorry, I ran into some trouble... Please try again";
+        }
+        
+        return {
+          processId,
+          assistantMessage: combinedMessage,
+          command: null
+        };
       }
+    }
+    
+    // Clear the progress interval and execution timeout when processing is complete
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
     }
     
     // After processing all steps, return a combined result
     console.log(`%c All steps processed successfully`, 'background: #27ae60; color: #fff; font-size: 12px; padding: 2px 5px;');
     console.timeEnd('Query processing time');
     console.groupEnd();
+
+    // If we get here, we should have a valid result from one of the handlers
+    // This is a fallback in case none of the handlers returned a result
     
-    // If we didn't get any results, return a default message
-    if (!lastResult || combinedMessage.length === 0) {
-      return {
-        processId,
-        assistantMessage: "I processed your request but couldn't generate a proper response."
-      };
+    // Make sure progress interval is cleared
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
     }
     
-    // Return the combined result
+    if (combinedMessage=='') {
+      combinedMessage = "\n\nI'm sorry, I ran into some trouble... Please try again";
+    }
     return {
       processId,
       assistantMessage: combinedMessage,
-      command: command
+      command: null
     };
   }
 
   /* --------------------------- Helper Methods --------------------------- */
 
+  /**
+   * Generate a dynamic progress message using the LLM based on the user's query
+   * This provides a more natural and engaging experience while waiting for the main response
+   * @param query The user's original query
+   * @param stage The current processing stage
+   * @param streamHandler Optional handler for streaming the progress message
+   * @returns Promise with the generated progress message
+   */
+  private async generateDynamicProgressMessage(query: string, stage: string, streamHandler?: (chunk: string) => void): Promise<string> {
+    try {
+      // If we have a stream handler, use streaming
+      if (streamHandler) {
+        // Start with a newline to separate from previous content
+        streamHandler('\n');
+        
+        // Use a lightweight model for quick generation with streaming
+        const response = await this.anthropic.generateQuickResponse(
+          `Generate a natural, conversational progress message as if you're thinking out loud while working on answering this query: "${query}". 
+          Current stage: ${stage}. 
+          Keep it brief (under 100 characters), friendly, and make it sound like you're actively working. 
+          Don't actually answer the query, just acknowledge you're working on it. 
+          Don't use quotation marks in your response.`,
+          { temperature: 0.7, max_tokens: 100 },
+          // Pass a custom stream handler that prepends a space to each chunk
+          (chunk) => streamHandler(chunk)
+        );
+        
+        return '\n' + response.assistantMessage;
+      } else {
+        // Non-streaming fallback
+        const response = await this.anthropic.generateQuickResponse(
+          `Generate a natural, conversational progress message as if you're thinking out loud while working on answering this query: "${query}". 
+          Current stage: ${stage}. 
+          Keep it brief (under 100 characters), friendly, and make it sound like you're actively working. 
+          Don't actually answer the query, just acknowledge you're working on it. 
+          Don't use quotation marks in your response.`,
+          { temperature: 0.7, max_tokens: 100 }
+        );
+        
+        return '\n' + response.assistantMessage;
+      }
+    } catch (error) {
+      console.error('Error generating dynamic progress message:', error);
+      // Fallback to static messages if LLM generation fails
+      const fallbackMessages = [
+        "\nI'm analyzing your Excel workbook...",
+        "\nLooking at the data structure and relationships...",
+        "\nExamining the formulas and connections between sheets...",
+        "\nProcessing your request, this will just take a moment..."
+      ];
+      const message = fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
+      
+      // If we have a stream handler, send the fallback message through it
+      if (streamHandler) {
+        streamHandler(message);
+      }
+      
+      return message;
+    }
+  }
  
   private getCurrentQueryType(pid: string): QueryType {
     // Get the query type from process status
@@ -414,11 +554,7 @@ export class ClientQueryProcessor {
     }
   }
 
-  /**
-   * Helper method to get a color for each query type for styled console logs
-   * @param queryType The query type to get a color for
-   * @returns A CSS color string
-   */
+
   private getClassificationColor(queryType: string): string {
     switch (queryType) {
       case QueryType.Greeting:
@@ -476,35 +612,63 @@ export class ClientQueryProcessor {
       sm.updateStatus(pid, {
         stage: ProcessStage.ResponseGeneration,
         status: ProcessStatus.Pending,
-        message: 'Analyzing your workbook...'
+        message: 'Analyzing sheets'
       });
       
-      // Create a modified stream handler that adds immediate feedback messages
-      const enhancedStreamHandler = stream ? this.createEnhancedStreamHandler(stream) : undefined;
+      // Flag to track if the actual LLM response has started
+      let actualResponseStarted = false;
+      
+      // Create a modified stream handler that stops placeholder text when actual response starts
+      const enhancedStreamHandler = stream ? 
+        (chunk: string) => {
+          // If this is the first chunk from the actual LLM response
+          if (!actualResponseStarted) {
+            actualResponseStarted = true;
+            // Add a line break to separate from any placeholder text
+            stream('\n\n');
+          }
+          // Pass the chunk to the original stream handler
+          stream(chunk);
+        } : undefined;
       
       // Start sending immediate feedback messages if streaming is enabled
       let feedbackInterval: NodeJS.Timeout | null = null;
       if (stream) {
         // Send the first immediate feedback message
-        stream('I\'m analyzing your Excel workbook... ');
+        stream('\nI\'m analyzing your Excel workbook... ');
         
         // Set up a sequence of feedback messages to show while waiting
         const feedbackMessages = [
-          'Looking at the workbook structure... ',
-          'Examining the data patterns... ',
-          'Analyzing formulas and relationships... ',
-          'Identifying key insights... '
+          '\nI\'m looking at the workbook structure and examining any linkages across tabs...',
+          '\nI\'m Examining the data patterns and relationships to determine how the data is structured... ',
+          '\nI\'m Analyzing formulas and relationships to understand how the data values are being calculated... ',
+          '\nI\'m Identifying key insights and relationships to fully understand the logic behind the analysis... '
         ];
         
         let messageIndex = 0;
         // Send a new message every 2-3 seconds to show progress
         feedbackInterval = setInterval(() => {
+          // Stop sending placeholder messages if actual response has started
+          if (actualResponseStarted) {
+            clearInterval(feedbackInterval!);
+            feedbackInterval = null;
+            return;
+          }
+          
           if (messageIndex < feedbackMessages.length) {
             stream(feedbackMessages[messageIndex]);
             messageIndex++;
           }
         }, 2500);
       }
+      
+      // Recovery messages to show if the API call fails
+      const recoveryMessages = [
+        "I'm having some trouble connecting to the server...",
+        "There seems to be a network issue. I'll keep trying...",
+        "The server is currently busy. Please bear with me...",
+        "I'm experiencing some connectivity problems right now..."
+      ];
       
       try {
         // Call the actual workbook explanation generation
@@ -524,7 +688,7 @@ export class ClientQueryProcessor {
         sm.updateStatus(pid, {
           stage: ProcessStage.ResponseGeneration,
           status: ProcessStatus.Success,
-          message: 'Answered question.'
+          message: 'Successfully analyzed workbook'
         });
         
         return {
@@ -533,21 +697,121 @@ export class ClientQueryProcessor {
           command: null
         };
       } catch (error) {
+        console.error('Error in workbook explanation with Anthropic:', error);
+        
         // Clear the feedback interval if it exists
         if (feedbackInterval) {
           clearInterval(feedbackInterval);
         }
         
-        // If there was an error and we're streaming, let the user know
+        // If there was an error and we're streaming, provide a message about trying an alternative service
         if (stream) {
-          stream('\n\nI encountered an issue while analyzing your workbook. Let me try again with a simpler approach...');
+          // Add a line break to separate from previous messages
+          stream('\n\n');
+          stream('I\'m having some trouble connecting to our primary service. Let me try an alternative approach...');
         }
         
-        // Update status to show we're retrying
+        // Update status to show we're trying an alternative service
         sm.updateStatus(pid, {
           stage: ProcessStage.ResponseGeneration,
           status: ProcessStatus.Pending,
-          message: 'Retrying with simplified analysis...'
+          message: 'Retrying analysis'
+        });
+        
+        // Try using OpenAI as a fallback if available
+        if (this.openai) {
+          try {
+            console.log('Attempting to use OpenAI as fallback for workbook explanation');
+            
+            // If streaming, add a message about the fallback attempt
+            if (stream) {
+              stream('\n\nTrying a different approach to naalyze your workbook');
+            }
+            
+            // Call OpenAI's workbook explanation method
+            const openaiResponse = await this.openai.generateWorkbookExplanation(
+              query,
+              workbookJSON,
+              enhancedStreamHandler, // Use the same enhanced stream handler
+              chatHistory,
+              attachments
+            );
+            
+            sm.updateStatus(pid, {
+              stage: ProcessStage.ResponseGeneration,
+              status: ProcessStatus.Success,
+              message: 'Successfully analyzed workbook'
+            });
+            
+            return {
+              processId: pid,
+              assistantMessage: openaiResponse.assistantMessage,
+              command: null
+            };
+          } catch (fallbackError) {
+            console.error('OpenAI fallback also failed:', fallbackError);
+            
+            // If there was an error with the fallback and we're streaming, let the user know
+            if (stream) {
+              // Add a line break to separate from previous messages
+              stream('\n\n');
+              
+              // Send the first recovery message immediately
+              const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
+              stream(randomMessage);
+              
+              // Set up a new interval for recovery messages
+              let recoveryIndex = 0;
+              const recoveryInterval = setInterval(() => {
+                recoveryIndex++;
+                if (recoveryIndex < recoveryMessages.length) {
+                  stream('\n\n' + recoveryMessages[recoveryIndex]);
+                } else {
+                  // Stop after we've shown all recovery messages
+                  clearInterval(recoveryInterval);
+                }
+              }, 3000); // Show a new message every 3 seconds
+              
+              // Clear the recovery interval after 15 seconds to prevent endless messages
+              setTimeout(() => {
+                clearInterval(recoveryInterval);
+              }, 15000);
+            }
+          }
+        } else {
+          // If OpenAI is not available and we're streaming, show recovery messages
+          if (stream) {
+            // Add a line break to separate from previous messages
+            stream('\n\n');
+            
+            // Send the first recovery message immediately
+            const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
+            stream(randomMessage);
+            
+            // Set up a new interval for recovery messages
+            let recoveryIndex = 0;
+            const recoveryInterval = setInterval(() => {
+              recoveryIndex++;
+              if (recoveryIndex < recoveryMessages.length) {
+                stream('\n\n' + recoveryMessages[recoveryIndex]);
+              } else {
+                // Stop after we've shown all recovery messages
+                clearInterval(recoveryInterval);
+              }
+            }, 3000); // Show a new message every 3 seconds
+            
+            // Clear the recovery interval after 15 seconds to prevent endless messages
+            setTimeout(() => {
+              clearInterval(recoveryInterval);
+            }, 15000);
+          }
+        }
+        
+        // Update status to show we're having issues
+        sm.updateStatus(pid, {
+          stage: ProcessStage.ResponseGeneration,
+          status: ProcessStatus.Pending,
+          message: 'Retrying analysis'
         });
         
         // Rethrow the error to be handled by the caller

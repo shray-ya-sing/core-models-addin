@@ -1,30 +1,25 @@
-import { Command, CommandStatus, CommandStep, Operation } from '../models/CommandModels';
-import { ClientCommandExecutor } from './ClientCommandExecutor';
+import { Command, CommandStatus, CommandStep, Operation } from '../../models/CommandModels';
 import { ClientExcelCommandAdapter } from './ClientExcelCommandAdapter';
-import { ClientWorkbookStateManager } from './ClientWorkbookStateManager';
+import { ClientWorkbookStateManager } from '../context/ClientWorkbookStateManager';
 
 /**
  * Client-side command manager for tracking and executing commands
  */
 export class ClientCommandManager {
   private commands: Map<string, Command> = new Map();
-  private commandExecutor: ClientCommandExecutor;
   private excelCommandAdapter: ClientExcelCommandAdapter;
   private workbookStateManager: ClientWorkbookStateManager | null = null;
   private commandUpdateListeners: ((command: Command) => void)[] = [];
 
   /**
    * Create a new ClientCommandManager
-   * @param commandExecutor The command executor to use
    * @param workbookStateManager Optional workbook state manager
    * @param excelCommandAdapter Optional existing adapter instance to use. If not provided, a new one will be created.
    */
   constructor(
-    commandExecutor: ClientCommandExecutor, 
     workbookStateManager?: ClientWorkbookStateManager,
     excelCommandAdapter?: ClientExcelCommandAdapter
   ) {
-    this.commandExecutor = commandExecutor;
     this.excelCommandAdapter = excelCommandAdapter || new ClientExcelCommandAdapter();
     this.workbookStateManager = workbookStateManager || null;
     console.log(`🔄 [ClientCommandManager] Using ${excelCommandAdapter ? 'provided' : 'new'} adapter instance`);
@@ -296,9 +291,6 @@ export class ClientCommandManager {
               try {
                 // Update operation status to running
                 this.updateOperationStatus(commandId, i, j, 'running');
-                
-                // Execute the operation
-                await this.commandExecutor.executeOperation(operation);
                 
                 // Update operation status to completed
                 this.updateOperationStatus(commandId, i, j, 'completed');

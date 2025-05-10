@@ -1,4 +1,4 @@
-import { WorkbookState, SheetState, CompressedWorkbook, CompressedSheet } from '../models/CommandModels';
+import { WorkbookState, SheetState, CompressedWorkbook, CompressedSheet } from '../../models/CommandModels';
 
 /**
  * Client-side spreadsheet compressor for efficient LLM processing

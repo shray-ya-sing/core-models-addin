@@ -1,4 +1,4 @@
-import { MetadataChunk, WorkbookMetrics } from '../models/CommandModels';
+import { MetadataChunk, WorkbookMetrics } from '../../models/CommandModels';
 import { SpreadsheetChunkCompressor } from './SpreadsheetChunkCompressor';
 import { RangeDependencyAnalyzer } from './RangeDependencyAnalyzer';
 

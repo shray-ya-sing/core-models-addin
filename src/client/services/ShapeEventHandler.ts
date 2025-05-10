@@ -5,7 +5,7 @@
  * This service polls for shape selection events and maps them to actions.
  */
 
-import { PendingChangesTracker } from './PendingChangesTracker';
+import { PendingChangesTracker } from './pending-changes/PendingChangesTracker';
 
 /**
  * Service for handling shape events in Excel

@@ -1,4 +1,4 @@
-import { MetadataChunk } from '../models/CommandModels';
+import { MetadataChunk } from '../../models/CommandModels';
 
 /**
  * Vector embedding type
