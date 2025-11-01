@@ -1,6 +1,6 @@
-# Cori Excel Add-in
+# CoreModels Addin
 
-The Cori Excel Add-in is a fully client-side Excel assistant that helps analysts move faster through their Excel workflow by extracting data, explaining, question answering, and executing tasks—all directly in the browser.
+The CoreModels Addin is a fully client-side Excel assistant that helps analysts move faster through their Excel workflow by extracting data, explaining, question answering, and executing tasks—all directly in the browser.
 
 ## Technology Stack
 
@@ -32,7 +32,7 @@ Excel add-ins are web applications that extend Excel's functionality using the O
 
 2. **Manifest File**: An XML file that specifies how the add-in should be integrated into Excel, including permissions, UI elements, and entry points.
 
-This Core Models Excel Add-in uses a 100% client-side architecture:
+This CoreModels Addin uses a 100% client-side architecture:
 
 When the add-in runs, it:
 1. **Loads the web application** in a task pane within Excel
