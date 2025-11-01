@@ -88,7 +88,7 @@ describe('OperationSchemas OpenAI Call', () => {
     // First, test conversion with a custom name
     // Check if we have an OpenAI API key in the environment for testing
     const openAIFormat = zodTextFormat(excelCommandPlanSchema, 'command_plan');
-    const apiKey = '';
+    const apiKey = process.env.OPENAI_API_KEY || '';
     const simpleFormat = {
       name: "command_plan",
       type: "json_schema",
@@ -184,7 +184,7 @@ describe('OperationSchemas OpenAI Function Calling', () => {
   jest.setTimeout(60000);
   
   it('should return valid function calls from OpenAI', async () => {
-    const apiKey = '';
+    const apiKey = process.env.OPENAI_API_KEY || '';
 
     if (apiKey) {
       // Create an OpenAI instance
