@@ -131,10 +131,11 @@ export class ExcelImageService {
   }
   
   /**
-   * Captures images of all worksheets in the active workbook
+   * Captures images of worksheets in the active workbook
+   * @param maxWorksheets Maximum number of worksheets to capture (default: 5)
    * @returns Promise with an array of base64-encoded images
    */
-  public async captureWorkbookImages(): Promise<string[]> {
+  public async captureWorkbookImages(maxWorksheets: number = 5): Promise<string[]> {
     return Excel.run(async (context) => {
       try {
         // Get all worksheets
@@ -146,8 +147,14 @@ export class ExcelImageService {
         const images: string[] = [];
         const skippedWorksheets: string[] = [];
         
-        // For each worksheet, capture an image
-        for (const worksheet of worksheets.items) {
+        // Log the worksheet limit
+        if (worksheets.items.length > maxWorksheets) {
+          console.log(`⚠️ Limiting image capture to first ${maxWorksheets} worksheets (out of ${worksheets.items.length} total)`); 
+        }
+        
+        // For each worksheet (limited to maxWorksheets), capture an image
+        for (let i = 0; i < Math.min(worksheets.items.length, maxWorksheets); i++) {
+          const worksheet = worksheets.items[i];
           try {
             // Activate the worksheet to capture
             worksheet.activate();
@@ -190,6 +197,13 @@ export class ExcelImageService {
           console.warn(`Skipped image capture for worksheets: ${skippedWorksheets.join(', ')}`);
         }
         
+        // Log any worksheets not processed due to the limit
+        if (worksheets.items.length > maxWorksheets) {
+          const remainingCount = worksheets.items.length - maxWorksheets;
+          const remainingNames = worksheets.items.slice(maxWorksheets).map(ws => ws.name).join(', ');
+          console.log(`ℹ️ ${remainingCount} worksheets were not processed due to the limit: ${remainingNames}`);
+        }
+        
         // If no images were captured, log a warning
         if (images.length === 0) {
           console.warn('No worksheet images were captured. Formatting analysis may be limited.');
@@ -228,121 +242,197 @@ export class ExcelImageService {
    */
   private async callExcelImageApi(worksheetName: string): Promise<string | null> {
     try {
-      console.log(`Capturing image for worksheet: ${worksheetName}`);
+      console.log(`
+-------------------------------------------------------
+📷 CAPTURING IMAGE FOR WORKSHEET: ${worksheetName}
+-------------------------------------------------------`);
       
-      // Create an in-memory copy of the workbook with formulas converted to values
-      // Using the utility function from WorkbookUtils.ts
-      console.log(`Creating formula-free workbook copy for worksheet: ${worksheetName}`);
-      const workbookBase64 = await createFormulaFreeWorkbookCopy();
+      // Step 1: Create an in-memory copy of the workbook with formulas converted to values
+      console.log(`Step 1: Creating formula-free workbook copy for worksheet: ${worksheetName}`);
+      let workbookBase64: string;
+      try {
+        // Using the utility function from WorkbookUtils.ts
+        const startTime = Date.now();
+        workbookBase64 = await createFormulaFreeWorkbookCopy();
+        const elapsedTime = Date.now() - startTime;
+        
+        // Log the size of the base64 string for debugging
+        console.log(`✅ Successfully created base64 Excel file in ${elapsedTime}ms`);
+        console.log(`   Base64 size: ${workbookBase64.length} characters`);
+        console.log(`   Base64 starts with: ${workbookBase64.substring(0, 50)}...`);
+        
+        if (!workbookBase64 || workbookBase64.length < 100) {
+          console.error(`❌ Invalid workbook base64 data: too short (${workbookBase64?.length || 0} chars)`);
+          return null;
+        }
+      } catch (workbookError) {
+        console.error(`❌ Error creating formula-free workbook copy:`, workbookError);
+        console.error(`Error stack trace: ${(workbookError as Error).stack}`);
+        return null;
+      }
       
-      // Log the size of the base64 string for debugging
-      console.log(`Workbook base64 size for ${worksheetName}: ${workbookBase64.length} characters`);
-      
-      // Since we're using the proven utility function, we can be more confident in the result
-      console.log(`Successfully created base64 Excel file for worksheet: ${worksheetName}`);
-      
-      // Prepare the request payload with the exact format expected by the API
+      // Step 2: Prepare the request payload
+      console.log(`Step 2: Preparing API request payload for ${worksheetName}`);
       const payload = {
         "ExcelFile": workbookBase64,
         "Sheets": [worksheetName] // Use uppercase 'S' in Sheets to match API expectations
       };
       
       // Log the payload structure (without the actual base64 content)
-      console.log(`Payload structure: ${JSON.stringify({
-        ExcelFile: payload.ExcelFile.slice(0, 100),
+      console.log(`   Payload structure: ${JSON.stringify({
+        ExcelFile: `${workbookBase64.substring(0, 30)}... (${workbookBase64.length} chars)`,
         Sheets: payload.Sheets
       }, null, 2)}`);
       
-      
-      // Check API health first
+      // Step 3: Check API health
+      console.log(`Step 3: Checking Excel Image API health`);
       const healthEndpoint = `${this.apiEndpoint.replace('/export', '')}/health`;
-      console.log(`Checking API health at: ${healthEndpoint}`);
+      console.log(`   Health endpoint: ${healthEndpoint}`);
       
       const healthController = new AbortController();
-      const healthTimeoutId = setTimeout(() => healthController.abort(), 3000); // 3 second timeout
+      const healthTimeoutId = setTimeout(() => {
+        console.warn(`⏰ Health check timed out after 3 seconds`);
+        healthController.abort();
+      }, 3000); // 3 second timeout
       
       try {
+        const startTime = Date.now();
         const healthCheck = await fetch(healthEndpoint, {
           signal: healthController.signal
         });
+        const elapsedTime = Date.now() - startTime;
         
         clearTimeout(healthTimeoutId);
         
         if (!healthCheck.ok) {
-          console.warn(`API health check failed with status: ${healthCheck.status}`);
+          console.error(`❌ API health check failed with status: ${healthCheck.status} in ${elapsedTime}ms`);
+          try {
+            const errorText = await healthCheck.text();
+            console.error(`   Error response: ${errorText}`);
+          } catch (e) {
+            console.error(`   Could not read error response`);
+          }
           return null;
         }
         
-        console.log('API health check successful, proceeding with image conversion');
+        console.log(`✅ API health check successful in ${elapsedTime}ms, proceeding with image conversion`);
       } catch (healthError) {
-        console.warn(`API health check failed: ${healthError.message}`);
+        console.error(`❌ API health check failed: ${(healthError as Error).message}`);
+        console.error(`   Is the Excel Image API running at ${this.apiEndpoint.split('/').slice(0, 3).join('/')}?`);
         return null;
       }
       
-      // Send to API endpoint for image conversion with timeout
+      // Step 4: Send to API endpoint for image conversion
+      console.log(`Step 4: Sending request to Excel Image API`);
+      console.log(`   API endpoint: ${this.apiEndpoint}`);
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => {
+        console.error(`⏰ API request timed out after 10 seconds`);
+        controller.abort();
+      }, 10000); // 10 second timeout
       
-      console.log(`Sending request to Excel Image API: ${this.apiEndpoint}`);
-      
-      const response = await fetch(this.apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        // Try to get the response text for more detailed error information
-        let errorDetails = '';
-        try {
-          errorDetails = await response.text();
-          console.error(`API error details: ${errorDetails}`);
-        } catch (textError) {
-          console.error('Could not read error details:', textError);
+      try {
+        const startTime = Date.now();
+        console.log(`   Sending POST request with payload size: ${JSON.stringify(payload).length} bytes`);
+        
+        const response = await fetch(this.apiEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        
+        const elapsedTime = Date.now() - startTime;
+        clearTimeout(timeoutId);
+        
+        console.log(`   Received response in ${elapsedTime}ms with status: ${response.status}`);
+        
+        if (!response.ok) {
+          // Try to get the response text for more detailed error information
+          let errorDetails = '';
+          try {
+            errorDetails = await response.text();
+          } catch (e) {
+            errorDetails = 'Could not read error details';
+          }
+          
+          console.error(`❌ API request failed with status: ${response.status}. Details: ${errorDetails}`);
+          return null;
         }
         
-        console.error(`Excel Image API returned error: ${response.status} ${response.statusText}${errorDetails ? ` - ${errorDetails}` : ''}`);
+        // Step 5: Parse the response
+        console.log(`Step 5: Parsing API response`);
+        let responseData: any;
+        try {
+          responseData = await response.json();
+          console.log(`   Response contains ${Object.keys(responseData).length} keys: ${Object.keys(responseData).join(', ')}`);
+        } catch (parseError) {
+          console.error(`❌ Error parsing API response as JSON:`, parseError);
+          return null;
+        }
+        
+        // Check if the response contains images - handle different possible response formats
+        let images = null;
+        
+        // Log the response structure for debugging
+        console.log(`   Response keys: ${Object.keys(responseData).join(', ')}`);
+        
+        // Try different possible keys where images might be stored
+        if (responseData.images && Array.isArray(responseData.images) && responseData.images.length > 0) {
+          images = responseData.images;
+          console.log(`   Found images in responseData.images`);
+        } else if (responseData.Images && Array.isArray(responseData.Images) && responseData.Images.length > 0) {
+          images = responseData.Images;
+          console.log(`   Found images in responseData.Images`);
+        } else if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0) {
+          images = responseData.data;
+          console.log(`   Found images in responseData.data`);
+        } else if (Array.isArray(responseData) && responseData.length > 0) {
+          images = responseData;
+          console.log(`   Response is directly an array of images`);
+        }
+        
+        // If we still don't have images, check if the response itself is a single image string
+        if (!images && typeof responseData === 'string' && responseData.length > 0) {
+          images = [responseData];
+          console.log(`   Response is directly a single image string`);
+        }
+        
+        // If we couldn't find images in any expected format, log the error and return null
+        if (!images) {
+          console.error(`❌ API response did not contain any images in expected format`);
+          console.log(`   Full response: ${JSON.stringify(responseData).substring(0, 500)}...`);
+          return null;
+        }
+        
+        console.log(`   Response contains ${images.length} images`);
+        
+        // Step 6: Get the first image (since we only requested one sheet)
+        const imageBase64 = images[0];
+        console.log(`   First image length: ${imageBase64?.length || 0} characters`);
+        console.log(`   First image starts with: ${imageBase64?.substring(0, 30)}...`);
+        
+        // Step 7: Validate the image
+        console.log(`Step 7: Validating image data`);
+        if (!this.isValidBase64PngImage(imageBase64)) {
+          console.error(`❌ API returned an invalid base64 PNG image`);
+          console.log(`   Image starts with: ${imageBase64?.substring(0, 30)}...`);
+          return null;
+        }
+        
+        console.log(`✅ Successfully captured valid PNG image for worksheet: ${worksheetName}`);
+        return imageBase64;
+      } catch (apiError) {
+        console.error(`❌ Error calling Excel Image API:`, apiError);
+        console.error(`   Error stack trace: ${(apiError as Error).stack}`);
         return null;
       }
-      
-      console.log(`Received successful response from Excel Image API for worksheet: ${worksheetName}`);
-      
-      // Parse the response - expecting an array of strings
-      const result = await response.json();
-      console.log(`Response received from API for worksheet: ${worksheetName}`);
-      
-      // The API should return an array of base64 strings
-      if (!Array.isArray(result)) {
-        console.error('Unexpected response format - not an array:', typeof result);
-        return null;
-      }
-      
-      if (result.length === 0) {
-        console.error('API returned empty array of images');
-        return null;
-      }
-      
-      // Get the first image from the array
-      const imageBase64 = result[0];
-      console.log(`Received image for worksheet: ${worksheetName} (${result.length} total images)`);
-      
-      // Log image size for debugging
-      console.log(`Image size: ${imageBase64.length} characters`);
-      
-      // Validate the base64 image before returning it
-      if (!this.isValidBase64PngImage(imageBase64)) {
-        console.error(`Invalid base64 PNG image returned for worksheet: ${worksheetName}`);
-        return null;
-      }
-      
-      return imageBase64;
     } catch (error) {
-      console.error(`Error calling Excel Image API for worksheet ${worksheetName}:`, error);
+      console.error(`❌ Unexpected error in callExcelImageApi:`, error);
+      console.error(`   Error stack trace: ${(error as Error).stack}`);
       return null;
     }
   }

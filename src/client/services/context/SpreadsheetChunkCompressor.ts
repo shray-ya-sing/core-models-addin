@@ -6,6 +6,8 @@ import {
   WorkbookMetrics 
 } from '../../models/CommandModels';
 import * as CryptoJS from 'crypto-js';
+import { WorkbookMetadataLogger } from './WorkbookMetadataLogger';
+
 
 /**
  * Interface for processed sheet data returned by processSheetData

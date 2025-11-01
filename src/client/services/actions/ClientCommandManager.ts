@@ -24,6 +24,14 @@ export class ClientCommandManager {
     this.workbookStateManager = workbookStateManager || null;
     console.log(`🔄 [ClientCommandManager] Using ${excelCommandAdapter ? 'provided' : 'new'} adapter instance`);
   }
+  
+  /**
+   * Get the Excel command adapter instance
+   * @returns The Excel command adapter
+   */
+  public getExcelCommandAdapter(): ClientExcelCommandAdapter {
+    return this.excelCommandAdapter;
+  }
 
   /**
    * Add a command to the manager

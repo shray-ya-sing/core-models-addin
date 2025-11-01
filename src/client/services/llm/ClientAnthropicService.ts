@@ -609,13 +609,14 @@ I'll classify this query for you. Here's the JSON:
     
     // First add a system message explaining the conversation context
     if (chatHistory.length > 0) {
-      // Filter out system messages and limit to last 10 messages to avoid token limits
-      // Anthropic API doesn't accept 'system' role in the messages array - only as a top-level parameter
+      // For classification, we only need the most recent message
+      // This is more efficient and prevents the classifier from being influenced by older messages
       const recentHistory = chatHistory
         .filter(msg => msg.role !== 'system')
-        .slice(-10);
+        .slice(-1);
       
       if (this.debugMode) {
+        console.log('Using only the most recent message for classification');
         console.log('Filtered chat history:', recentHistory.length, 'of', chatHistory.length, 'messages');
       }
       
@@ -1653,7 +1654,7 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
         console.log('chatHistory', chatHistory.slice(0, 0));
         // Add chat history for context
         // comment this out for noe
-        /*
+        
         if (chatHistory && chatHistory.length > 0) {
           for (const msg of chatHistory) {
             if (msg.attachments && msg.attachments.length > 0) {
@@ -1696,7 +1697,7 @@ ${chatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')
             }
           }
         }
-        */
+        
         // Add workbook context
         messages.push({
           role: 'user',

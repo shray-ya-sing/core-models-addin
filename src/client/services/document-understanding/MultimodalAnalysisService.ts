@@ -67,41 +67,56 @@ export class MultimodalAnalysisService {
     if (anthropicService) {
       this.formattingProtocolAnalyzer = new FormattingProtocolAnalyzer(anthropicService);
     }
+
   }
   
   /**
    * Sets the current workbook ID and ensures its formatting is analyzed
    * @param workbookId The ID of the current workbook
+   * @param waitForCompletion Whether to wait for the full analysis to complete (default: false)
    * @returns Promise that resolves when the workbook's formatting has been analyzed
    */
-  public async setWorkbookAndEnsureFormatting(workbookId: string): Promise<void> {
+  public async setWorkbookAndEnsureFormatting(workbookId: string, waitForCompletion: boolean = false): Promise<void> {
     // If this is a different workbook than the current one
     if (this.currentWorkbookId !== workbookId) {
-      console.log(`Setting current workbook to: ${workbookId}`);
+      console.log(`
+=======================================================
+🔄 SETTING WORKBOOK AND ENSURING FORMATTING: ${workbookId}
+=======================================================`);
+      console.log(`Wait for completion: ${waitForCompletion ? 'YES' : 'NO'}`);
       this.currentWorkbookId = workbookId;
+      const hasExistingFormatting = this.hasWorkbookFormatting(workbookId);
       
-      // Check if we've already analyzed this workbook
-      if (!this.hasWorkbookFormatting(workbookId)) {
-        console.log(`Analyzing formatting protocol for workbook: ${workbookId}`);
+      if (!hasExistingFormatting) {
+        console.log(`🔍 Starting formatting protocol analysis for workbook: ${workbookId}`);
         
         try {
+          console.log(`Step 1: Calling analyzeFormattingProtocol with waitForCompletion=${waitForCompletion}`);
           // Analyze the formatting protocol for this workbook
-          const formattingProtocol = await this.analyzeFormattingProtocol();
+          // If waitForCompletion is true, this will wait for the full analysis including LLM processing
+          const formattingProtocol = await this.analyzeFormattingProtocol(waitForCompletion);
+          
+          console.log(`Step 2: Received formatting protocol with ${Object.keys(formattingProtocol).length} top-level categories`);
+          console.log(`   Protocol contains: ${Object.keys(formattingProtocol).join(', ')}`);
           
           // Store the formatting protocol for this workbook
-          this.workbookFormattingProtocols.set(workbookId, {
+          console.log(`Step 3: Storing formatting protocol in cache for workbook: ${workbookId}`);
+          const formattingData = {
             formattingProtocol,
             formattingMetadata: this.cachedFormattingMetadata!,
             timestamp: new Date().toISOString()
-          });
+          };
           
-          console.log(`Formatting protocol analysis complete for workbook: ${workbookId}`);
+          this.workbookFormattingProtocols.set(workbookId, formattingData);
+          
+          console.log(`✅ Formatting protocol analysis ${waitForCompletion ? 'fully' : 'initially'} complete for workbook: ${workbookId}`);
         } catch (error) {
-          console.error(`Error analyzing formatting protocol for workbook ${workbookId}:`, error);
+          console.error(`❌ ERROR ANALYZING FORMATTING PROTOCOL FOR WORKBOOK ${workbookId}:`, error);
+          console.error(`Error stack trace: ${error.stack}`);
           throw error;
         }
       } else {
-        console.log(`Using cached formatting protocol for workbook: ${workbookId}`);
+        console.log(`📋 Using cached formatting protocol for workbook: ${workbookId}`);
         
         // Update the legacy cache variables for backward compatibility
         const workbookData = this.workbookFormattingProtocols.get(workbookId)!;
@@ -110,28 +125,6 @@ export class MultimodalAnalysisService {
         this.lastAnalysisTimestamp = workbookData.timestamp;
       }
     }
-  }
-  
-  /**
-   * Checks if a workbook's formatting has been analyzed
-   * @param workbookId The ID of the workbook to check
-   * @returns True if the workbook's formatting has been analyzed
-   */
-  private hasWorkbookFormatting(workbookId: string): boolean {
-    return this.workbookFormattingProtocols.has(workbookId);
-  }
-  
-  /**
-   * Gets the complete formatting data for a specific workbook
-   * @param workbookId The ID of the workbook
-   * @returns The complete formatting data for the workbook, or undefined if not available
-   */
-  public getWorkbookFormattingData(workbookId: string): {
-    formattingProtocol: FormattingProtocol;
-    formattingMetadata: WorkbookFormattingMetadata;
-    timestamp: string;
-  } | undefined {
-    return this.workbookFormattingProtocols.get(workbookId);
   }
   
   /**
@@ -148,6 +141,9 @@ export class MultimodalAnalysisService {
     return this.workbookFormattingProtocols.get(id)!.formattingProtocol;
   }
   
+  public hasWorkbookFormatting(workbookId: string): boolean {
+    return this.workbookFormattingProtocols.has(workbookId);
+  }
   /**
    * Gets the formatting metadata for the current workbook
    * @returns The formatting metadata for the current workbook or null if not available
@@ -264,31 +260,144 @@ export class MultimodalAnalysisService {
   private currentFormattingAnalysisPromise: Promise<FormattingProtocol> | null = null;
   
   /**
-   * Analyzes the formatting protocol of the active workbook without blocking the main flow
+   * Analyzes the formatting protocol of the active workbook
+   * @param waitForCompletion Whether to wait for the full analysis to complete (default: false)
    * @returns Promise with the formatting protocol analysis
    */
-  public async analyzeFormattingProtocol(): Promise<FormattingProtocol> {
+  public async analyzeFormattingProtocol(waitForCompletion: boolean = false): Promise<FormattingProtocol> {
     try {
+      console.log(`
+=======================================================
+🔍 ANALYZE FORMATTING PROTOCOL (waitForCompletion=${waitForCompletion})
+=======================================================`);
+      
       // Check if we have a cached protocol for the current workbook
       if (this.currentWorkbookId && this.hasWorkbookFormatting(this.currentWorkbookId)) {
-        console.log(`Using cached formatting protocol for workbook: ${this.currentWorkbookId}`);
-        return this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingProtocol;
+        console.log(`📋 Using cached formatting protocol for workbook: ${this.currentWorkbookId}`);
+        const cachedProtocol = this.workbookFormattingProtocols.get(this.currentWorkbookId)!.formattingProtocol;
+        console.log(`   Cached protocol has ${Object.keys(cachedProtocol).length} top-level categories`);
+        return cachedProtocol;
       }
       
+      // If waitForCompletion is true, perform the full analysis and wait for it to complete
+      if (waitForCompletion) {
+        // Add a clearer log message to show we're in blocking mode
+        console.log(`
+=======================================================
+🕐 BLOCKING MODE: Performing FULL formatting analysis and waiting for completion
+=======================================================`);
+        
+        // If there's already an analysis in progress, wait for it to complete
+        if (this.isFormattingAnalysisInProgress && this.currentFormattingAnalysisPromise) {
+          console.log('🕐 Waiting for in-progress formatting analysis to complete');
+          try {
+            // Wait for the existing promise
+            const result = await this.currentFormattingAnalysisPromise;
+            console.log(`✅ Successfully obtained result from in-progress analysis with ${Object.keys(result).length} categories`);
+            
+            // Store the result in the cache
+            if (this.currentWorkbookId) {
+              // Make sure we store the result in the cache
+              this.workbookFormattingProtocols.set(this.currentWorkbookId, {
+                formattingProtocol: result,
+                formattingMetadata: this.cachedFormattingMetadata || this.getDefaultFormattingMetadata(),
+                timestamp: new Date().toISOString()
+              });
+              
+              console.log(`✅ Cached formatting protocol for workbook: ${this.currentWorkbookId}`);
+            }
+            
+            return result;
+          } catch (waitError) {
+            console.error('❌ Error waiting for in-progress formatting analysis:', waitError);
+            console.error(`Error stack trace: ${waitError.stack}`);
+            throw waitError;
+          }
+        }
+        
+        // Otherwise, perform the analysis directly
+        console.log('🕐 No analysis in progress, performing direct analysis');
+        try {
+          // Set the flag to indicate analysis is in progress
+          this.isFormattingAnalysisInProgress = true;
+          
+          // Perform the analysis
+          const result = await this.performFormattingAnalysis();
+          
+          // Store the result in the cache
+          if (this.currentWorkbookId) {
+            this.workbookFormattingProtocols.set(this.currentWorkbookId, {
+              formattingProtocol: result,
+              formattingMetadata: this.cachedFormattingMetadata || this.getDefaultFormattingMetadata(),
+              timestamp: new Date().toISOString()
+            });
+            
+            console.log(`✅ Cached formatting protocol for workbook: ${this.currentWorkbookId}`);
+          }
+          
+          console.log(`
+=======================================================
+✅ BLOCKING MODE: Direct analysis completed with ${Object.keys(result).length} categories
+=======================================================`);
+          
+          // Reset the analysis flag
+          this.isFormattingAnalysisInProgress = false;
+          
+          return result;
+        } catch (analysisError) {
+          console.error('❌ Error in direct formatting analysis:', analysisError);
+          console.error(`Error stack trace: ${analysisError.stack}`);
+          
+          // Reset the analysis flag
+          this.isFormattingAnalysisInProgress = false;
+          
+          throw analysisError;
+        }
+      }
+      
+      // If waitForCompletion is false (default behavior), use the non-blocking approach
       // If there's already an analysis in progress, return a basic protocol immediately
-      // This prevents blocking the main flow while still allowing the analysis to complete in the background
       if (this.isFormattingAnalysisInProgress) {
-        console.log('Formatting analysis already in progress, returning basic protocol');
+        console.log('💭 Formatting analysis already in progress, returning basic protocol');
         return this.getBasicFormattingProtocol();
       }
       
       // Start the analysis in the background and return a basic protocol immediately
+      console.log('💭 Starting formatting analysis in background');
       this.startFormattingAnalysisInBackground();
       
       // Return a basic protocol to avoid blocking the main flow
+      console.log('💭 Returning basic protocol while analysis runs in background');
       return this.getBasicFormattingProtocol();
     } catch (error) {
-      console.error('Error in analyzeFormattingProtocol:', error);
+      console.error('❌ Error in analyzeFormattingProtocol:', error);
+      console.error(`Error stack trace: ${error.stack}`);
+      
+      // Check if this is specifically an Excel Image API error
+      if (error.message && (
+          error.message.includes('Excel Image API') ||
+          error.message.includes('localhost:8080')
+      )) {
+        console.error(`
+=======================================================
+❌ FORMATTING PROTOCOL ANALYSIS FAILED: EXCEL IMAGE API ERROR
+=======================================================
+The formatting protocol analysis requires the Excel Image API server to be running.
+
+Please make sure the Excel Image API server is running at http://localhost:8080.
+This is required for formatting protocol analysis to work properly.
+
+Using default formatting protocol as a fallback.
+=======================================================`);
+      } else {
+        console.error(`
+=======================================================
+❌ FORMATTING PROTOCOL ANALYSIS FAILED: ${error.message}
+=======================================================
+Using default formatting protocol as a fallback.
+=======================================================`);
+      }
+      
       return this.getBasicFormattingProtocol();
     }
   }
@@ -344,23 +453,33 @@ export class MultimodalAnalysisService {
    */
   private async performFormattingAnalysis(): Promise<FormattingProtocol> {
     try {
-      console.log(`Analyzing formatting protocol for workbook: ${this.currentWorkbookId}`);
+      console.log(`
+=======================================================
+🔍 FULL FORMATTING PROTOCOL ANALYSIS FOR WORKBOOK: ${this.currentWorkbookId}
+=======================================================`);
       
       // Step 1: Extract formatting metadata (this doesn't require the API)
+      console.log('📊 STEP 1: Extracting formatting metadata from workbook');
+      const startMetadataTime = Date.now();
       const formattingMetadata = await this.formattingProtocolAnalyzer.extractFormattingMetadata();
-      console.log('Successfully extracted formatting metadata');
+      const metadataTime = Date.now() - startMetadataTime;
+      console.log(`✅ Successfully extracted formatting metadata in ${metadataTime}ms`);
+      console.log(`   Metadata contains information for ${formattingMetadata.sheets.length} sheets`);
       
       // Store the metadata in the cache immediately
       this.cachedFormattingMetadata = formattingMetadata;
       
       // Step 2: Get workbook images for all sheets
+      console.log('🖼️ STEP 2: Converting worksheets to images');
       const worksheetNames = await this.getAllWorksheetNames();
-      console.log(`Requesting images for all ${worksheetNames.length} sheets in workbook`);
+      console.log(`   Requesting images for all ${worksheetNames.length} sheets in workbook`);
       
       // Request images for all sheets explicitly
       let images: string[] = [];
+      const startImageTime = Date.now();
       try {
         // Use a timeout to prevent this from hanging indefinitely
+        console.log('   Calling Excel Image API to convert worksheets to PNG images...');
         const imagePromise = performMultimodalAnalysis(this.apiEndpoint, {
           sheets: worksheetNames
         });
@@ -372,20 +491,33 @@ export class MultimodalAnalysisService {
         
         // Race the image retrieval against the timeout
         images = await Promise.race([imagePromise, timeoutPromise]);
-        console.log(`Successfully retrieved ${images.length} images for analysis`);
+        const imageTime = Date.now() - startImageTime;
+        console.log(`✅ Successfully retrieved ${images.length} images in ${imageTime}ms`);
       } catch (imageError) {
-        console.warn('Error retrieving workbook images:', imageError);
+        console.warn('❌ Error retrieving workbook images:', imageError);
         // Continue with analysis using just the metadata
         images = [];
       }
       
       // Step 3: Analyze formatting protocol using the LLM
+      console.log('🧠 STEP 3: Analyzing formatting with Claude LLM');
+      console.log('   Sending images and metadata to Anthropic Claude for analysis...');
       // Even if we couldn't get images, we can still analyze the metadata
+      const startLlmTime = Date.now();
       const formattingProtocol = await this.formattingProtocolAnalyzer.analyzeFormattingProtocol();
+      const llmTime = Date.now() - startLlmTime;
+      console.log(`✅ LLM analysis completed in ${llmTime}ms`);
+      
+      const totalTime = Date.now() - startMetadataTime;
+      console.log(`
+=======================================================
+✅ FORMATTING PROTOCOL ANALYSIS COMPLETE: ${Math.round(totalTime/1000)}s
+=======================================================
+`);
       
       return formattingProtocol;
     } catch (error) {
-      console.error('Error in performFormattingAnalysis:', error);
+      console.error('❌ Error in performFormattingAnalysis:', error);
       return this.getBasicFormattingProtocol();
     }
   }
@@ -618,11 +750,113 @@ export class MultimodalAnalysisService {
   public getAllAnalysisResults(): MultimodalAnalysisResult[] {
     return Array.from(this.analysisResults.values());
   }
+
+
+  /**
+   * Gets the current workbook ID
+   */
+  public getCurrentWorkbookId(): string | undefined {
+    return this.currentWorkbookId;
+  }
 }
 
 // Create singleton instance (without Anthropic service for now)
 // The actual Anthropic service should be injected when the application starts
 export const multimodalAnalysisService = new MultimodalAnalysisService();
+
+// Add new persistence methods to MultimodalAnalysisService
+Object.assign(MultimodalAnalysisService.prototype, {
+  /**
+   * Saves the formatting protocol for a workbook to Office.context.document.settings
+   * @param workbookId The ID of the workbook
+   * @param data The formatting data to save
+   */
+  saveFormattingProtocolToSettings(workbookId: string, data: any): void {
+    try {
+      if (Office?.context?.document?.settings) {
+        const settingsKey = `formatting_protocol_${workbookId}`;
+        
+        // We need to stringify the data to store it in settings
+        const serializedData = JSON.stringify(data);
+        
+        // Save to document settings
+        Office.context.document.settings.set(settingsKey, serializedData);
+        
+        // Persist the settings
+        Office.context.document.settings.saveAsync(() => {
+          console.log(`✅ Successfully saved formatting protocol for workbook ${workbookId} to document settings`);
+        });
+      } else {
+        console.warn('⚠️ Cannot save formatting protocol: Office context or settings not available');
+      }
+    } catch (error) {
+      console.error('❌ Error saving formatting protocol to settings:', error);
+    }
+  },
+  
+  /**
+   * Loads the formatting protocol for a workbook from Office.context.document.settings
+   * @param workbookId The ID of the workbook
+   * @returns The formatting data, or undefined if not found
+   */
+  loadFormattingProtocolFromSettings(workbookId: string): {
+    formattingProtocol: FormattingProtocol;
+    formattingMetadata: WorkbookFormattingMetadata;
+    timestamp: string;
+  } | undefined {
+    try {
+      if (Office?.context?.document?.settings) {
+        const settingsKey = `formatting_protocol_${workbookId}`;
+        
+        // Get the serialized data from settings
+        const serializedData = Office.context.document.settings.get(settingsKey);
+        
+        if (serializedData) {
+          // Parse the serialized data
+          const parsedData = JSON.parse(serializedData);
+          console.log(`✅ Successfully loaded formatting protocol for workbook ${workbookId} from document settings`);
+          return parsedData;
+        }
+      } else {
+        console.warn('⚠️ Cannot load formatting protocol: Office context or settings not available');
+      }
+    } catch (error) {
+      console.error('❌ Error loading formatting protocol from settings:', error);
+    }
+    
+    return undefined;
+  },
+  
+  /**
+   * Loads all cached formatting protocols from settings
+   */
+  loadCachedFormattingProtocols(): void {
+    try {
+      if (Office?.context?.document?.settings) {
+        // Try to get all keys that start with 'formatting_protocol_'
+        const allKeys = Object.keys(Office.context.document.settings);
+        const protocolKeys = allKeys.filter(key => key.startsWith('formatting_protocol_'));
+        
+        for (const key of protocolKeys) {
+          // Extract the workbook ID from the key
+          const workbookId = key.replace('formatting_protocol_', '');
+          
+          // Load the formatting protocol
+          const formattingData = this.loadFormattingProtocolFromSettings(workbookId);
+          
+          if (formattingData) {
+            // Store in memory
+            this.workbookFormattingProtocols.set(workbookId, formattingData);
+          }
+        }
+        
+        console.log(`✅ Loaded ${this.workbookFormattingProtocols.size} formatting protocols from settings`);
+      }
+    } catch (error) {
+      console.error('❌ Error loading cached formatting protocols:', error);
+    }
+  }
+});
 
 /**
  * Initialize the multimodal analysis service with the Anthropic service

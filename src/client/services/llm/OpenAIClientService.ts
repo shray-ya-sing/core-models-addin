@@ -3,8 +3,15 @@
  * Client-side service for interacting with the OpenAI API
  */
 import { v4 as uuidv4 } from 'uuid';
-import OpenAI from 'openai';
+import OpenAI, { OpenAIError } from 'openai';
 import { CommandStatus } from '../../models/CommandModels';
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
+import { excelCommandPlanSchema } from '../actions/OperationSchemas';
+// Add this code temporarily to log the schema
+import { zodToJsonSchema } from "zod-to-json-schema";
+
+
 
 /**
  * Attachment type for multimodal messages
@@ -20,7 +27,8 @@ export interface Attachment {
 export enum ModelType {
   Light = 'light',     // For simple queries like greetings
   Standard = 'standard', // For regular workbook queries
-  Advanced = 'advanced'  // For complex operations
+  Advanced = 'advanced',  // For complex operations
+  OperationGenerator = 'operation_generator' // For generating Excel operations
 }
 
 /**
@@ -28,6 +36,8 @@ export enum ModelType {
  */
 // Import the ExcelCommandPlan and ExcelOperation types
 import { ExcelCommandPlan, ExcelOperation } from '../../models/ExcelOperationModels';
+import { format } from 'crypto-js';
+import { text } from 'body-parser';
 
 export class OpenAIClientService {
   private openai: OpenAI;
@@ -38,7 +48,8 @@ export class OpenAIClientService {
   private models = {
     [ModelType.Light]: 'gpt-3.5-turbo',
     [ModelType.Standard]: 'gpt-4o-mini',
-    [ModelType.Advanced]: 'gpt-4.1-nano-2025-04-14'
+    [ModelType.Advanced]: 'gpt-4.1-nano-2025-04-14',
+    [ModelType.OperationGenerator]: 'gpt-4o-ft:gpt-4.1-nano-2025-04-14:personal:op:BVoH0tMZ:ckpt-step-26'
   };
   
   /**
@@ -676,6 +687,7 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
   public async generateExcelOperations(
     query: string,
     workbookContext: string,
+    systemPrompt: string,
     chatHistory: Array<{ role: string; content: string }>,
     attachments?: Attachment[],
     isRetry: boolean = false
@@ -691,12 +703,8 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
       } catch (parseError) {
         console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
       }
-      
-      // Build the system prompt
-      const systemPrompt = this.buildExcelOperationsSystemPrompt(formattingProtocol, isRetry);
-      
       // Filter the chat history to only include the last 5 messages
-      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
+      const filteredChatHistory = chatHistory.slice(-1).filter(msg => msg.role !== 'system');
       const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
       
       // Convert messageHistory to OpenAI message format
@@ -747,7 +755,7 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
       }
       
       // Use GPT-4 for better JSON generation
-      const modelToUse = this.models[ModelType.Advanced];
+      const modelToUse = this.models[ModelType.OperationGenerator];
       
       // Make the API call
       const response = await this.openai.chat.completions.create({
@@ -778,7 +786,7 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
         // If this is not already a retry, try again with more explicit instructions
         if (!isRetry) {
           console.log('Retrying operation generation with OpenAI using explicit JSON instructions');
-          return this.generateExcelOperations(query, workbookContext, chatHistory, attachments, true);
+          return this.generateExcelOperations(query, workbookContext, systemPrompt, chatHistory, attachments, true);
         }
         
         // If this is already a retry, return an empty plan
@@ -794,179 +802,6 @@ When uncertain about any aspect, openly acknowledge limitations in your understa
         operations: []
       };
     }
-  }
-  
-  /**
-   * Build the system prompt for generating Excel operations
-   * @param formattingProtocol Optional formatting protocol to include in the prompt
-   * @param isRetry Whether this is a retry attempt after a failed parsing
-   * @returns The system prompt
-   */
-  private buildExcelOperationsSystemPrompt(formattingProtocol: any = null, isRetry: boolean = false): string {
-    let basePrompt = `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
-
-CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.`;
-    
-    // Add more explicit instructions for retry attempts
-    if (isRetry) {
-      basePrompt = `${basePrompt}
-
-CRITICAL JSON FORMATTING INSTRUCTION: Your previous response contained invalid JSON that could not be parsed. You MUST respond with ONLY a valid JSON object. Do not include any explanations, notes, or text outside the JSON object. The JSON must exactly follow the schema provided below with no extra or missing fields. Ensure all quotes, brackets, and commas are properly placed.`;
-    }
-    
-    // Add formatting protocol instructions if available
-    if (formattingProtocol) {
-      basePrompt += `
-
-IMPORTANT: When generating operations that involve formatting or styling, follow the user's existing formatting conventions as described below. This ensures consistency with the user's workbook design.
-
-FORMATTING PROTOCOL:
-`;
-      
-      // Add color coding instructions
-      if (formattingProtocol.colorCoding) {
-        basePrompt += `
-COLOR CODING CONVENTIONS:
-`;
-        
-        if (formattingProtocol.colorCoding.inputs) {
-          basePrompt += `- Input cells: ${formattingProtocol.colorCoding.inputs}
-`;
-        }
-        if (formattingProtocol.colorCoding.calculations) {
-          basePrompt += `- Calculation cells: ${formattingProtocol.colorCoding.calculations}
-`;
-        }
-        if (formattingProtocol.colorCoding.hardcodedValues) {
-          basePrompt += `- Hardcoded values: ${formattingProtocol.colorCoding.hardcodedValues}
-`;
-        }
-        if (formattingProtocol.colorCoding.linkedValues) {
-          basePrompt += `- Linked values: ${formattingProtocol.colorCoding.linkedValues}
-`;
-        }
-        if (formattingProtocol.colorCoding.headers) {
-          basePrompt += `- Headers: ${formattingProtocol.colorCoding.headers}
-`;
-        }
-        if (formattingProtocol.colorCoding.totals) {
-          basePrompt += `- Totals: ${formattingProtocol.colorCoding.totals}
-`;
-        }
-      }
-      
-      // Add number formatting instructions
-      if (formattingProtocol.numberFormatting) {
-        basePrompt += `
-NUMBER FORMATTING CONVENTIONS:
-`;
-        
-        if (formattingProtocol.numberFormatting.currency) {
-          basePrompt += `- Currency: ${formattingProtocol.numberFormatting.currency}
-`;
-        }
-        if (formattingProtocol.numberFormatting.percentage) {
-          basePrompt += `- Percentage: ${formattingProtocol.numberFormatting.percentage}
-`;
-        }
-        if (formattingProtocol.numberFormatting.date) {
-          basePrompt += `- Date: ${formattingProtocol.numberFormatting.date}
-`;
-        }
-        if (formattingProtocol.numberFormatting.general) {
-          basePrompt += `- General: ${formattingProtocol.numberFormatting.general}
-`;
-        }
-      }
-      
-      // Add border styling instructions
-      if (formattingProtocol.borderStyles) {
-        basePrompt += `
-BORDER STYLING CONVENTIONS:
-`;
-        
-        if (formattingProtocol.borderStyles.tables) {
-          basePrompt += `- Tables: ${formattingProtocol.borderStyles.tables}
-`;
-        }
-        if (formattingProtocol.borderStyles.sections) {
-          basePrompt += `- Sections: ${formattingProtocol.borderStyles.sections}
-`;
-        }
-        if (formattingProtocol.borderStyles.totals) {
-          basePrompt += `- Totals: ${formattingProtocol.borderStyles.totals}
-`;
-        }
-      }
-      
-      basePrompt += `
-When creating new elements in the workbook, ensure they follow these formatting conventions for consistency.`;
-    }
-    
-    basePrompt += `
-
-OUTPUT FORMAT:
-You must respond with a JSON object that follows this schema:
-{
-  "description": string,  // A brief description of what these operations will do
-  "operations": [         // Array of operations to execute
-    {
-      "op": string,       // Operation type (see allowed values below)
-      ...                 // Additional fields specific to the operation type
-    }
-  ]
-}`;
-    
-    return basePrompt + `
-
-ALLOWED OPERATION TYPES:
-- set_value: Set a value in a cell
-- add_formula: Add a formula to a cell
-- create_chart: Create a chart
-- format_range: Format a range of cells
-- clear_range: Clear a range of cells
-- create_table: Create a table
-- sort_range: Sort a range
-- filter_range: Filter a range
-- create_sheet: Create a new worksheet
-- delete_sheet: Delete a worksheet
-- copy_range: Copy a range to another location
-- merge_cells: Merge cells
-- unmerge_cells: Unmerge cells
-- conditional_format: Add conditional formatting
-- add_comment: Add a comment to a cell
-- set_freeze_panes: Freeze rows or columns
-- set_active_sheet: Set the active worksheet
-- set_print_settings: Set print settings
-- set_page_setup: Set page setup
-- export_to_pdf: Export worksheet to PDF
-- set_worksheet_settings: Set worksheet settings
-- format_chart: Format a chart
-
-OPERATION SCHEMAS:
-
-1. set_value:
-{
-  "op": "set_value",
-  "target": string,       // Cell reference (e.g. "Sheet1!A1")
-  "value": any            // Value to set (string, number, boolean)
-}
-
-2. add_formula:
-{
-  "op": "add_formula",
-  "target": string,       // Cell reference (e.g. "Sheet1!A1")
-  "formula": string       // Formula to add (e.g. "=SUM(B1:B10)")
-}
-
-3. create_chart:
-{
-  "op": "create_chart",
-  "range": string,        // Range for chart data (e.g. "Sheet1!A1:D10")
-  "type": string,         // Chart type (e.g. "columnClustered", "line", "pie")
-  "title": string,        // Optional chart title
-  "position": string      // Optional position (e.g. "Sheet1!F1")
-}`;
   }
   
   /**
@@ -1150,8 +985,24 @@ OPERATION SCHEMAS:
         "depends_on": []
       }
     ]
-  }ample 7 - Workbook Question with KB:
-  
+  }
+  Example 7 - Command:
+  USer: Create a new sheet showing the margin profile of the different business segments (as a percent of sales)
+
+    {
+    "query_type": "workbook_command",
+    "steps": [
+      {
+        "step_index": 0,
+        "step_action": "Create new sheet with margin profile data",
+        "step_specific_query": "Create a new sheet with a table showing the margin profile data on the IS tab of the different business segments. Calculate the margins of each segment as the segment revenue percentage of total revenue",
+        "step_type": "workbook_command",
+        "depends_on": []
+      }
+    ]
+  }
+
+
   Important rules:
   1. Always use the most specific query_type that applies
   2. Decompose complex queries into logical steps
@@ -1161,7 +1012,9 @@ OPERATION SCHEMAS:
   6. IMPORTANT: Do NOT classify a query as a greeting if it contains a greeting word but also includes a question or command. For example, "Hi, what's the total revenue?" should be classified as workbook_question, not greeting
   7. Only classify as greeting if the SOLE intent is a greeting with no task
   8. Don't break down simple questions or commands into more than one step. Try to keep it to as few steps as possible. 
-
+  9. Don't mix up questions and commands. If the user requests you to perform n action and explain something, focus first on completing the action and then on answering the question. Command steps should be sequential without putting a question step in the middle.
+  10. Don't break down simple questions or commands into more than one step. Try to keep it to as few steps as possible. For example, creating a new worksheet doesn't need to be a separate step. 
+  11. When the user asks you to perform an action based on some data, don't create a separate question step just to explain the data to the user, only generate the command steps and include in the the tabs or cells mentioned by user where the data should be taken from. 
   ANTI-PATTERNS TO AVOID:
   1. DO NOT respond with "I'll analyze this query" or "I'll classify this as..."
   2. DO NOT include any explanatory text before or after the JSON
@@ -1170,6 +1023,9 @@ OPERATION SCHEMAS:
   6. DO NOT acknowledge the request in natural language
   7. NEVER respond with anything other than the raw JSON object
   8. NEVER create redundant steps that simply repeat prior steps. Don't be too atomic in your approach. Aim to condense workbook explanations into one step.
+  9. NEVER create a separate command only for creating a new worksheet. Group the worksheet creation with the other commands.
+  10. Be atomic with commands but carry context throughout commands for ex. if user specifies a certain tab where data is located, if multiple steps need that data then the location should be specified in the sub-query for that step. Don't lose user specified information in sub-queries.
+
 
   
   YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT WITH NO OTHER TEXT.
@@ -1184,7 +1040,7 @@ OPERATION SCHEMAS:
   I'll classify this query for you. Here's the JSON:
   {"query_type":"workbook_command","steps":[{"step_index":0,"step_action":"Update data","step_specific_query":"Update cell A1","step_type":"workbook_command","depends_on":[]}]}`;
   
-      // Use Sonnet for classification (most capable model)
+
       const modelToUse = this.models[ModelType.Advanced];
       
       // Prepare the messages array with chat history and the current query
@@ -1196,7 +1052,7 @@ OPERATION SCHEMAS:
         // Anthropic API doesn't accept 'system' role in the messages array - only as a top-level parameter
         const recentHistory = chatHistory
           .filter(msg => msg.role !== 'system')
-          .slice(-10);
+          .slice(-1);
         
         if (this.debugMode) {
           console.log('Filtered chat history:', recentHistory.length, 'of', chatHistory.length, 'messages');
@@ -1306,35 +1162,168 @@ OPERATION SCHEMAS:
  * @param messages Array of message objects to clean
  * @returns Properly formatted messages for OpenAI API
  */
-private cleanMessagesForAPI(messages: Array<{role: string, content: string, attachments?: Attachment[]}>): any[] {
-  return messages.map(msg => {
-    // Handle messages with attachments (for multimodal models)
-    if (msg.attachments && msg.attachments.length > 0) {
+  private cleanMessagesForAPI(messages: Array<{role: string, content: string, attachments?: Attachment[]}>): any[] {
+    return messages.map(msg => {
+      // Handle messages with attachments (for multimodal models)
+      if (msg.attachments && msg.attachments.length > 0) {
+        return {
+          role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
+          content: [
+            { type: 'text', text: msg.content },
+            ...msg.attachments.map(attachment => {
+              if (attachment.type === 'image') {
+                return {
+                  type: 'image_url',
+                  image_url: {
+                    url: attachment.content,
+                    detail: 'high'
+                  }
+                };
+              }
+              return null;
+            }).filter(Boolean)
+          ]
+        };
+      }
+      
+      // Handle regular text messages
       return {
         role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
-        content: [
-          { type: 'text', text: msg.content },
-          ...msg.attachments.map(attachment => {
-            if (attachment.type === 'image') {
-              return {
-                type: 'image_url',
-                image_url: {
-                  url: attachment.content,
-                  detail: 'high'
-                }
-              };
-            }
-            return null;
-          }).filter(Boolean)
-        ]
+        content: msg.content
       };
+    });
+  }
+
+  /**
+ * Generate Excel operations using OpenAI's Responses API with fine-tuned models
+ * @param query User query for generating operations
+ * @param workbookContext Context information about the workbook
+ * @param chatHistory Previous chat history
+ * @param attachments Optional image attachments
+ * @param isRetry Whether this is a retry attempt after a failed parsing
+ * @returns A plan with Excel operations
+ */
+public async generateExcelOperationsWithResponses(
+  query: string,
+  systemPrompt: string,
+  workbookContext: string,
+  chatHistory: Array<{ role: string; content: string }>,
+  attachments?: Attachment[],
+  isRetry: boolean = false
+): Promise<ExcelCommandPlan> {
+  try {
+    // Filter the chat history to only include the last message
+    const filteredChatHistory = chatHistory.slice(-1).filter(msg => msg.role !== 'system');
+
+    // Convert the Zod schema to a JSON schema
+    const jsonSchema = zodToJsonSchema(excelCommandPlanSchema, "command_plan");
+
+    // Stringify with pretty formatting
+    console.log('ZOD JSON Schema:', JSON.stringify(jsonSchema, null, 2).slice(0, 200));
+
+    // Create the format object for the OpenAI API
+    const excelOperationsSchema = zodTextFormat(excelCommandPlanSchema, "command_plan");
+
+    
+    // Prepare the content for the Responses API
+    // For the Responses API, we need to format the input differently
+    let responseInput = 
+      `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
+    
+    const inputMessages = [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      {
+        role: "user",
+        content: responseInput
+      }
+    ];
+    // Get our attachments ready if needed
+    let imageAttachments = [];
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        if (attachment.type === 'image') {
+          imageAttachments.push({
+            type: "base64",
+            media_type: attachment.mimeType,
+            data: attachment.content
+          });
+        }
+      }
     }
     
-    // Handle regular text messages
+    // Use the fine-tuned model
+    const modelToUse = "ft:gpt-4.1-nano-2025-04-14:personal:op:BVoH0tMZ:ckpt-step-26";
+    
+    console.log('Making OpenAI Responses API call with model:', modelToUse);
+    
+    // Make the API call to the Responses endpoint with proper format
+    const requestOptions: any = {
+      model: modelToUse,
+      input: inputMessages,
+      temperature: isRetry ? 0.1 : 0.2,
+      max_output_tokens: 4000,
+      top_p: 1,
+      store: true,
+      text:{
+        format: excelOperationsSchema
+      }
+    };    
+    
+    // Make the API call
+    console.log('Request options:', JSON.stringify(requestOptions, null, 2));
+    const response = await this.openai.responses.parse(requestOptions);
+
+    const responsePlan = response.output_parsed;
+    if (!responsePlan) {
+      console.error('Could not extract plan from response');
+      throw new Error('Unable to extract plan from OpenAI Responses API response');
+    }
+    const responseText = JSON.stringify(responsePlan, null, 2);
+    
+    // Log the first 200 characters of the response
+    console.log('Response structure:', responseText.slice(0, 200));
+
+    if (!responseText) {
+      console.error('Could not extract text from response. Full response:', response);
+      throw new Error('Unable to extract text from OpenAI Responses API response');
+    }
+    
+    try {
+      // Parse the JSON response
+      const plan = JSON.parse(responseText) as ExcelCommandPlan;
+      
+      // Validate the operations
+      this.validateOperations(plan.operations);
+      
+      return {
+        description: plan.description || 'Excel operations',
+        operations: plan.operations || []
+      };
+    } catch (parseError) {
+      console.error('Failed to parse operations JSON from OpenAI Responses API:', parseError);
+      
+      // If this is not already a retry, try again with more explicit instructions
+      if (!isRetry) {
+        console.log('Retrying operation generation with OpenAI Responses API using explicit JSON instructions');
+        return this.generateExcelOperationsWithResponses(query, systemPrompt, workbookContext, chatHistory, attachments, true);
+      }
+      
+      // If this is already a retry, return an empty plan
+      return {
+        description: 'Error parsing operations from OpenAI Responses API',
+        operations: []
+      };
+    }
+  } catch (error: any) {
+    console.error('Error generating Excel operations with OpenAI Responses API:', error);
     return {
-      role: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
-      content: msg.content
+      description: 'Error generating operations with OpenAI Responses API',
+      operations: []
     };
-  });
+  }
 }
+
 }

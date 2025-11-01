@@ -61,6 +61,7 @@
     "es6-promise": "^4.2.8",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
     "jsdom": "^26.1.0",
     "langchain": "^0.3.23",

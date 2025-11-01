@@ -32,15 +32,71 @@ enum MistralModelType {
 }
 
 export class QAService {
-  private anthropic: Anthropic;
-  private openai: OpenAI;
-  private mistral: Mistral;
+  private anthropic: any;
+  private openai: any;
+  private mistral: any;
+  private lastProvider: 'anthropic' | 'openai' | 'mistral' = 'anthropic';
+  
+  // Cooldown tracking for providers
+  private lastUsedTimestamp: Record<string, number> = {
+    anthropic: 0,
+    openai: 0,
+    mistral: 0
+  };
+
   private anthropicModels: Record<AnthropicModelType, string>;
   private openaiModels: Record<OpenAIModelType, string>;
   private mistralModels: Record<MistralModelType, string>;
   private verboseLogging: boolean;
   private debugMode: boolean;
-  private lastProvider: 'anthropic' | 'openai' | 'mistral' = 'openai'; // Start with OpenAI so first call will be Anthropic
+
+  /**
+   * Rotates to the next provider with cooldown logic to avoid rate limits
+   * Prioritizes providers that haven't been used recently
+   */
+  private rotateProviderWithCooldown(): void {
+    // Record timestamp of last use for current provider
+    this.lastUsedTimestamp[this.lastProvider] = Date.now();
+    
+    // Look for a provider that hasn't been used recently
+    const cooldownPeriod = 5000; // 5 seconds cooldown
+    const now = Date.now();
+    
+    // Try to find providers that are not on cooldown
+    const availableProviders = ['openai', 'anthropic', 'mistral'].filter(
+      provider => !this.lastUsedTimestamp[provider] || 
+                  now - this.lastUsedTimestamp[provider] > cooldownPeriod
+    ) as Array<'anthropic' | 'openai' | 'mistral'>;
+    
+    if (availableProviders.length > 0) {
+      // Prioritize the provider used least recently
+      this.lastProvider = availableProviders.sort((a, b) => 
+        (this.lastUsedTimestamp[a] || 0) - (this.lastUsedTimestamp[b] || 0)
+      )[0];
+      console.log(`Selected provider ${this.lastProvider} based on cooldown availability`);
+    } else {
+      // If all on cooldown, just rotate but add jitter to avoid synchronized calls
+      if (this.lastProvider === 'anthropic') {
+        this.lastProvider = 'mistral';
+      } else if (this.lastProvider === 'mistral') {
+        this.lastProvider = 'openai';
+      } else {
+        this.lastProvider = 'anthropic';
+      }
+      console.log(`All providers on cooldown, rotating to ${this.lastProvider}`);
+    }
+  }
+  
+  // Helper methods for handling different providers
+  private getModel(provider: 'anthropic' | 'openai' | 'mistral'): string {
+    if (provider === 'anthropic') {
+      return this.anthropicModels[AnthropicModelType.Advanced];
+    } else if (provider === 'openai') {
+      return this.openaiModels[OpenAIModelType.Advanced];
+    } else {
+      return this.mistralModels[MistralModelType.Advanced];
+    }
+  }
 
   constructor(
     verboseLogging = false,
@@ -171,18 +227,8 @@ export class QAService {
     let retryCount = 0;
     let lastError: any = null;
     
-    // Always start with Anthropic, then rotate to OpenAI and Mistral
-    // Initialize lastProvider to ensure we start with Anthropic
-    this.lastProvider = 'anthropic';
-    
-    // Then set up the next provider in the rotation
-    if (this.lastProvider === 'anthropic') {
-      this.lastProvider = 'openai';
-    } else if (this.lastProvider === 'openai') {
-      this.lastProvider = 'mistral';
-    } else {
-      this.lastProvider = 'anthropic';
-    }
+    // Set up provider rotation with cooldown logic
+    this.rotateProviderWithCooldown();
     let currentProvider = this.lastProvider;
     
     console.log(`Using ${currentProvider} for this workbook explanation`);

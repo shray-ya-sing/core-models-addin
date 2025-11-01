@@ -94,7 +94,9 @@ SPECIAL INSTRUCTIONS FOR WORKBOOK-LEVEL QUERIES:
 - If the query is about the entire workbook (examples: explain the workbook, overview, how many sheets, etc.)
 - Or if the query requires context from multiple sheets to answer properly
 - Or if you're unsure whether the query needs one sheet or multiple sheets
-THEN include ALL sheets in your response.
+THEN include ALL sheets in your response. DO THIS ONLY IF THE USER IS EXPLICITLY ASKING A QUESTION THAT REQUIRES ANALYZING THE ENTIRE WORKBOOK.
+
+For requests like creating new tabs, deleting tabs, include only the first sheet. Never include the name of a sheet does not yet exist (is not available in your options).
 
 Here's some context about which data is typically in which sheet to help you make a decision about which sheets to include: 
 
@@ -107,11 +109,18 @@ Be conservative in your selection of sheets.
 
 RESPOND WITH VALID JSON ONLY - an array of strings representing sheet names.`;
       
-      // Format the chat history for context, filtering out system messages
-      const filteredChatHistory = chatHistory.filter(msg => msg.role !== 'system');
-      const chatHistoryContext = filteredChatHistory.length > 0 ?
-        `\nCHAT HISTORY FOR CONTEXT:\n${filteredChatHistory.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n')}` :
+      // For sheet selection, we only need the most recent message
+      // This is more efficient and prevents the classifier from being influenced by older messages
+      const filteredChatHistory = chatHistory.filter(msg => msg.role !== 'system').slice(-1);
+      
+      // Add chat history context only if there's a message and it's different from the current query
+      const chatHistoryContext = (filteredChatHistory.length > 0 && filteredChatHistory[0].content !== query) ?
+        `\nMOST RECENT MESSAGE FOR CONTEXT:\n${filteredChatHistory[0].role.toUpperCase()}: ${filteredChatHistory[0].content}` :
         '';
+      
+      if (this.debugMode) {
+        console.log('Using only the most recent message for sheet selection');
+      }
       
       const userPrompt = `USER QUERY: "${query}"
 

@@ -10,11 +10,11 @@ import {
   SetCalculationOptionsOperation,
   RecalculateRangesOperation
 } from '../../models/ExcelOperationModels';
-import * as ExcelUtils from '../../utils/ExcelUtils';
 import { ActionRecorder } from '../versioning/ActionRecorder';
-import { VersionHistoryService } from '../versioning/VersionHistoryService';
 import { PendingChangesTracker } from '../pending-changes/PendingChangesTracker';
 import { ShapeEventHandler } from '../ShapeEventHandler';
+import * as ExcelUtils from '../../utils/ExcelUtils';
+import { EventEmitter } from 'events';
 
 /**
  * Service that interprets and executes Excel operations using Office.js
@@ -25,6 +25,13 @@ export class ClientExcelCommandInterpreter {
   private shapeEventHandler: ShapeEventHandler | null = null;
   private currentWorkbookId: string = '';
   private requireApproval: boolean = false;
+  private eventEmitter = new EventEmitter();
+  
+  // Event names
+  static readonly OPERATION_COMPLETED = 'operation:completed';
+  static readonly OPERATION_FAILED = 'operation:failed';
+  static readonly BATCH_COMPLETED = 'batch:completed';
+  static readonly BATCH_FAILED = 'batch:failed';
   
   /**
    * Set the action recorder for version history tracking
@@ -168,6 +175,17 @@ export class ClientExcelCommandInterpreter {
    * @param operations The operations to execute
    * @returns A promise that resolves when all operations are complete
    */
+  /**
+   * Register a listener for operation events
+   * @param event The event to listen for (use static event names)
+   * @param listener The callback function
+   * @returns A function to remove the listener
+   */
+  public on(event: string, listener: (...args: any[]) => void): () => void {
+    this.eventEmitter.on(event, listener);
+    return () => this.eventEmitter.removeListener(event, listener);
+  }
+
   public async executeOperations(operations: ExcelOperation[]): Promise<void> {
     if (!operations || operations.length === 0) {
       console.warn('No operations to execute');
@@ -215,17 +233,83 @@ export class ClientExcelCommandInterpreter {
         .join(', '));
     
     try {
-      await Excel.run(async (context) => {
-        for (const operation of operations) {
-          await this.executeOperation(context, operation);
-        }
-        
-        await context.sync();
-      });
+      let completedOperations = 0;
       
-      console.log(`✅ [ClientExcelCommandInterpreter] All operations in batch ${batchId} executed successfully`);
+      // Split operations into smaller batches of 10 operations each
+      const BATCH_SIZE = 10;
+      const batches = [];
+      
+      for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+        batches.push(operations.slice(i, i + BATCH_SIZE));
+      }
+      
+      console.log(`🔄 [ClientExcelCommandInterpreter] Split ${operations.length} operations into ${batches.length} batches of max ${BATCH_SIZE} operations each`);
+      
+      // Process each batch with a delay between batches
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        const batchNumber = batchIndex + 1;
+        
+        console.log(`⏱️ [ClientExcelCommandInterpreter] Processing batch ${batchNumber}/${batches.length} with ${batch.length} operations`);
+        
+        await Excel.run(async (context) => {
+          for (const operation of batch) {
+            try {
+              await this.executeOperation(context, operation);
+              
+              // Emit operation completed event
+              completedOperations++;
+              const progress = Math.round((completedOperations / operations.length) * 100);
+              
+              this.eventEmitter.emit(ClientExcelCommandInterpreter.OPERATION_COMPLETED, {
+                operation,
+                batchId,
+                progress,
+                completedCount: completedOperations,
+                totalCount: operations.length
+              });
+            } catch (opError) {
+              // Emit operation failed event
+              this.eventEmitter.emit(ClientExcelCommandInterpreter.OPERATION_FAILED, {
+                operation,
+                batchId,
+                error: opError,
+                completedCount: completedOperations,
+                totalCount: operations.length
+              });
+              throw opError; // Re-throw to stop the batch
+            }
+          }
+          
+          await context.sync();
+        });
+        
+        console.log(`✅ [ClientExcelCommandInterpreter] Batch ${batchNumber}/${batches.length} executed successfully`);
+        
+        // Add a delay between batches if not the last batch
+        if (batchIndex < batches.length - 1) {
+          console.log(`⏳ [ClientExcelCommandInterpreter] Adding delay between batches...`);
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay
+        }
+      }
+      
+      console.log(`✅ [ClientExcelCommandInterpreter] All ${batches.length} batches in ${batchId} executed successfully`);
+      
+      // Emit batch completed event
+      this.eventEmitter.emit(ClientExcelCommandInterpreter.BATCH_COMPLETED, {
+        batchId,
+        operationCount: operations.length
+      });
     } catch (error) {
       console.error(`❌ [ClientExcelCommandInterpreter] Error executing Excel operations in batch ${batchId}:`, error);
+      
+      // Emit batch failed event
+      this.eventEmitter.emit(ClientExcelCommandInterpreter.BATCH_FAILED, {
+        batchId,
+        error,
+        operationCount: operations.length
+      });
+      
       throw error;
     }
   }

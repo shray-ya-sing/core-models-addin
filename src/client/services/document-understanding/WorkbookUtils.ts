@@ -112,8 +112,27 @@ export async function getWorkbookImagesForMultimodalAnalysis(
     
     // Check API health first with a timeout to avoid long waits
     try {
+      console.log(`
+=======================================================
+⚠️ CHECKING EXCEL IMAGE API HEALTH
+=======================================================`);
+      console.log(`Health endpoint: ${apiEndpoint.replace('/export', '')}/health`);
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.error(`
+=======================================================
+❌ EXCEL IMAGE API HEALTH CHECK TIMED OUT
+=======================================================
+The Excel Image API server at ${apiEndpoint.split('/').slice(0, 3).join('/')} is not responding.
+
+Please make sure the Excel Image API server is running at ${apiEndpoint.split('/').slice(0, 3).join('/')}.
+This is required for formatting protocol analysis to work properly.
+
+To start the server, you need to run the Excel Image API project.
+=======================================================`);
+      }, 3000); // 3 second timeout
       
       const healthCheck = await fetch(`${apiEndpoint.replace('/export', '')}/health`, {
         signal: controller.signal
@@ -122,14 +141,53 @@ export async function getWorkbookImagesForMultimodalAnalysis(
       clearTimeout(timeoutId);
       
       if (!healthCheck.ok) {
-        console.warn(`API health check failed: ${healthCheck.status} ${healthCheck.statusText}`);
+        console.error(`
+=======================================================
+❌ EXCEL IMAGE API HEALTH CHECK FAILED: ${healthCheck.status} ${healthCheck.statusText}
+=======================================================
+The Excel Image API server at ${apiEndpoint.split('/').slice(0, 3).join('/')} returned an error.
+
+Please make sure the Excel Image API server is running correctly.
+This is required for formatting protocol analysis to work properly.
+=======================================================`);
         throw new Error(`Excel Image API health check failed with status: ${healthCheck.status}`);
       }
       
-      console.log('API health check successful, proceeding with image conversion');
+      console.log(`
+=======================================================
+✅ EXCEL IMAGE API HEALTH CHECK SUCCESSFUL
+=======================================================
+Proceeding with image conversion.
+=======================================================`);
     } catch (healthError) {
-      console.warn(`API health check failed: ${healthError.message}`);
-      throw new Error(`Excel Image API unavailable: ${healthError.message}`);
+      if (healthError.name === 'AbortError') {
+        // Already logged in the timeout handler
+        throw new Error(`Excel Image API server not running at ${apiEndpoint.split('/').slice(0, 3).join('/')}`);
+      } else if (healthError.name === 'TypeError' && healthError.message.includes('Failed to fetch')) {
+        console.error(`
+=======================================================
+❌ EXCEL IMAGE API SERVER NOT RUNNING
+=======================================================
+The Excel Image API server at ${apiEndpoint.split('/').slice(0, 3).join('/')} is not running.
+
+Please make sure the Excel Image API server is running at ${apiEndpoint.split('/').slice(0, 3).join('/')}.
+This is required for formatting protocol analysis to work properly.
+
+To start the server, you need to run the Excel Image API project.
+=======================================================`);
+        throw new Error(`Excel Image API server not running at ${apiEndpoint.split('/').slice(0, 3).join('/')}`);
+      } else {
+        console.error(`
+=======================================================
+❌ EXCEL IMAGE API HEALTH CHECK FAILED: ${healthError.message}
+=======================================================
+The Excel Image API server at ${apiEndpoint.split('/').slice(0, 3).join('/')} is not responding correctly.
+
+Please make sure the Excel Image API server is running correctly.
+This is required for formatting protocol analysis to work properly.
+=======================================================`);
+        throw new Error(`Excel Image API unavailable: ${healthError.message}`);
+      }
     }
     
     // Prepare the request payload according to the documented API format

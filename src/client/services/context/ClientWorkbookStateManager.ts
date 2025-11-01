@@ -5,6 +5,9 @@ import { RangeDetector } from './RangeDetector';
 import { SpreadsheetChunkCompressor } from './SpreadsheetChunkCompressor';
 import { WorkbookMetadataCache } from './WorkbookMetadataCache';
 import { RangeDependencyAnalyzer } from './RangeDependencyAnalyzer';
+import { WorkbookMetadataLogger } from './WorkbookMetadataLogger';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Office.js import - this should be available globally in the Excel add-in environment
 declare const Excel: any;
@@ -29,6 +32,7 @@ export class ClientWorkbookStateManager {
   
   private enableRangeDetection: boolean = true; // Set to false to disable range-level granularity
   private activeSheetName: string = '';
+  private workbookId: string | undefined;
   
   constructor(cacheTimeoutMs?: number) {
     if (cacheTimeoutMs !== undefined) {
@@ -47,7 +51,23 @@ export class ClientWorkbookStateManager {
    * @returns The ID of the current workbook, or undefined if not available
    */
   public getWorkbookId(): string | undefined {
-    return Office?.context?.document?.settings?.get('workbookId');
+    
+    if (this.workbookId) {
+      return this.workbookId;
+    }
+    else{
+      const workbookId = Office?.context?.document?.settings?.get('workbookId');
+      this.storeWorkbookId(workbookId);
+      return this.workbookId;
+    }    
+  }
+
+  /**
+   * Store an arbitrary id as the workbook ID
+   * @param workbookId The ID of the workbook to store
+   */
+  public storeWorkbookId(workbookId: string): void {
+    this.workbookId = workbookId;
   }
   
   /**
@@ -338,6 +358,46 @@ export class ClientWorkbookStateManager {
         
         // Add each sheet to the metadata cache with dependency analysis
         this.processSheetStatesForCache(sheets);
+
+        // Log the metadata using the sheet data we already have
+        try {
+          if (sheets.length > 0) {
+            const firstSheet = sheets[1];
+            const metadata = {
+              extractedAt: new Date().toISOString(),
+              workbookVersion: this.metadataCache.getWorkbookVersion?.(),
+              chunksCount: sheets.length,
+              firstSheetDetails: {
+                name: firstSheet.name,
+                rowCount: firstSheet.usedRange?.rowCount || 0,
+                columnCount: firstSheet.usedRange?.columnCount || 0,
+                // Include a sample of cells (first 10 rows and columns to avoid huge logs)
+                cellSample: this.getCellSample(firstSheet, 10, 10),
+                // Include table information
+                tables: firstSheet.tables?.map(table => ({
+                  name: table.name,
+                  range: table.range,
+                  headers: table.headers || []
+                })) || [],
+                // Include chart information
+                charts: firstSheet.charts?.map(chart => ({
+                  name: chart.name,
+                  range: chart.range
+                })) || []
+              },
+              workbookState: {
+                sheets: sheets.map(sheet => sheet.name),
+                activeSheet: activeWorksheet.name
+              }
+            };
+            console.log('DETAILED WORKBOOK METADATA:', JSON.stringify(metadata, null, 2));
+          } else {
+            console.log('No sheets found in the workbook');
+          }
+        } catch (error) {
+          console.error('Error logging detailed workbook metadata:', error);
+          // Don't rethrow the error - we don't want metadata logging to break the main functionality
+        }
         
         // Return workbook state with all sheet states
         return {
@@ -349,6 +409,31 @@ export class ClientWorkbookStateManager {
       console.error('Error capturing workbook state:', error);
       throw error;
     }
+  }
+
+  private getCellSample(sheet: SheetState, maxRows: number, maxCols: number): any[] {
+    if (!sheet.values || !sheet.formulas) {
+      return [];
+    }
+  
+    const sample = [];
+    const rowCount = Math.min(sheet.values.length, maxRows);
+    const colCount = Math.min(sheet.values[0]?.length || 0, maxCols);
+  
+    for (let i = 0; i < rowCount; i++) {
+      const row = [];
+      for (let j = 0; j < colCount; j++) {
+        row.push({
+          row: i + 1, // 1-based row index
+          column: j + 1, // 1-based column index
+          value: sheet.values[i]?.[j],
+          formula: sheet.formulas[i]?.[j] || null
+        });
+      }
+      sample.push(row);
+    }
+  
+    return sample;
   }
   
   /**

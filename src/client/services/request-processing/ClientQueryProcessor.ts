@@ -506,16 +506,16 @@ export class ClientQueryProcessor {
     chatHistory: Array<{role: string, content: string, attachments?: any[]}> = []
   ): Promise<QueryClassification> {
     try {
-      const res = await this.anthropic.classifyQueryAndDecompose(query, chatHistory);
+      const res = await this.openai.classifyQueryAndDecompose(query, chatHistory);
 
       // Deserialize the classification result
       const classification = res as QueryClassification;
       
       return classification;
-    } catch (anthropicError) {
-      console.warn('Anthropic classification failed, falling back to OpenAI:', anthropicError);
+    } catch (openaiError) {
+      console.warn('OpenAI classification failed, falling back to simple explanation:', openaiError);
       
-      // If Anthropic fails, try OpenAI as fallback
+      // If OpenAI fails, try simple explanation as fallback
       try {
         const res = await this.openai.classifyQueryAndDecompose(query, chatHistory);
         
@@ -885,8 +885,8 @@ export class ClientQueryProcessor {
         const feedbackMessages = [
           '\nI\'m planning how to execute this request for you...',
           '\nI\'m gathering internal resources to execute this request... ',
-          '\nI\'m retriveing the right tools to help me execute this request... ',
-          '\nI\'m Identifying the right cells I need to execute this request... '
+          '\nI\'m retrieving the right tools to help me execute this request... ',
+          '\nI\'m identifying the right cells I need to execute this request... '
         ];
         
         let messageIndex = 0;
@@ -923,6 +923,7 @@ export class ClientQueryProcessor {
         // Create the Excel operation generator
         const operationGenerator = new ClientExcelOperationGenerator({
           anthropic: this.anthropic,
+          openai: this.openai,
           debugMode: true
         });
     
@@ -933,6 +934,10 @@ export class ClientQueryProcessor {
           chatHistory,
           attachments
         );
+
+        if (operationPlan.operations.length === 0) {
+          throw new Error('No operations generated');
+        }
     
         // Create a Command object from the operation plan
         const command: Command = {
@@ -972,23 +977,63 @@ export class ClientQueryProcessor {
         // Add command to the manager and register for status updates
         this.commandManager.addCommand(command);
         
+        // Clear any existing feedback interval before setting up new listeners
+        if (feedbackInterval) {
+          clearInterval(feedbackInterval);
+          feedbackInterval = null;
+        }
+
         // Set up command status monitoring
         let commandCompleted = false;
+        let lastOperationIndex = -1;
+        let operationStartTime = Date.now();
+        
+        // Create a map to track operation types for better feedback
+        const operationTypeMap = new Map<string, number>();
+        command.steps[0].operations.forEach(op => {
+          const count = operationTypeMap.get(op.type) || 0;
+          operationTypeMap.set(op.type, count + 1);
+        });
+        
+        // Format operation summary for streaming
+        let operationSummary = '';
+        if (stream) {
+          operationSummary = '\n\nI\'ll be performing the following operations:';
+          operationTypeMap.forEach((count, type) => {
+            operationSummary += `\n- ${count} ${type.replace(/_/g, ' ')} operation${count > 1 ? 's' : ''}`;
+          });
+          stream(operationSummary);
+          stream('\n\nExecuting operations...');
+        }
+
+        // Enhanced status listener that provides operation-level feedback
         const statusListener = (updatedCommand: Command) => {
           if (updatedCommand.id !== command.id) return;
           
+          // Handle command status changes
           if (updatedCommand.status === CommandStatus.Running) {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Pending,
               message: `Processing your request...`,
             });
+            
+            // Stream initial execution message if not already done
+            if (stream && !operationSummary) {
+              stream('\n\nExecuting operations...');
+            }
           } else if (updatedCommand.status === CommandStatus.Completed) {
             sm.updateStatus(pid, {
               stage: ProcessStage.CommandExecution,
               status: ProcessStatus.Success,
               message: 'I completed the operation successfully',
             });
+            
+            // Stream completion message
+            if (stream) {
+              stream('\n\nAll operations completed successfully! ✓');
+            }
+            
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
           } else if (updatedCommand.status === CommandStatus.Failed) {
@@ -997,18 +1042,141 @@ export class ClientQueryProcessor {
               status: ProcessStatus.Error,
               message: `I failed to complete the operation. Please try again`,
             });
+            
+            // Stream error message
+            if (stream) {
+              stream('\n\nI encountered an error while executing the operations. Some operations may not have completed.');
+            }
+            
             commandCompleted = true;
             unregisterListener(); // Call the function returned by onCommandUpdate
+          }
+          
+          // Track operation progress for detailed feedback
+          if (updatedCommand.steps && updatedCommand.steps.length > 0) {
+            const step = updatedCommand.steps[0];
+            
+            // Find the current operation index
+            let currentOpIndex = -1;
+            for (let i = 0; i < step.operations.length; i++) {
+              if (step.operations[i].status === CommandStatus.Running) {
+                currentOpIndex = i;
+                break;
+              }
+            }
+            
+            // If we've moved to a new operation, provide feedback
+            if (currentOpIndex > lastOperationIndex && currentOpIndex >= 0 && stream) {
+              const currentOp = step.operations[currentOpIndex];
+              const opType = currentOp.type.replace(/_/g, ' ');
+              const target = currentOp.target;
+              
+              // Calculate progress percentage
+              const progress = Math.round((currentOpIndex / step.operations.length) * 100);
+              
+              // Only stream updates for significant operations or periodically
+              const now = Date.now();
+              if (currentOpIndex === 0 || // First operation
+                  currentOpIndex === step.operations.length - 1 || // Last operation
+                  now - operationStartTime > 1000) { // At least 1 second since last update
+                
+                // Format the target for display
+                let displayTarget = target;
+                if (target && target.includes('!')) {
+                  // It's a cell reference, extract just the range part
+                  displayTarget = target.split('!').pop();
+                }
+                
+                // Stream the operation update
+                stream(`\n[${progress}%] ${opType}${displayTarget ? ` on ${displayTarget}` : ''}`);
+                
+                // Reset the timer
+                operationStartTime = now;
+              }
+              
+              lastOperationIndex = currentOpIndex;
+            }
           }
         };
 
         // Register for updates - this returns an unregister function
         const unregisterListener = this.commandManager.onCommandUpdate(statusListener);
 
+        // Set up operation-level progress updates if streaming is enabled
+        if (stream) {
+          // Get the Excel command interpreter from the command manager
+          const excelAdapter = this.commandManager.getExcelCommandAdapter();
+          if (excelAdapter && excelAdapter.getCommandInterpreter) {
+            const interpreter = excelAdapter.getCommandInterpreter();
+            
+            // Register for operation completed events
+            const unregisterOperationListener = interpreter.on(
+              'operation:completed', 
+              (data: any) => {
+                // Extract operation details
+                const { operation, progress, completedCount, totalCount } = data;
+                const opType = operation.op || 'unknown';
+                
+                // Format the operation type for display (convert snake_case to Title Case)
+                const formattedOpType = opType
+                  .split('_')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(' ');
+                
+                // Get a user-friendly target description
+                let target = '';
+                if (operation.target) {
+                  target = operation.target;
+                } else if (operation.range) {
+                  target = operation.range;
+                } else if (operation.sheet) {
+                  target = operation.sheet;
+                } else if (operation.name) {
+                  target = operation.name;
+                }
+                
+                // Format the target for display
+                if (target && target.includes('!')) {
+                  // It's a cell reference, extract just the range part
+                  target = target.split('!').pop() || '';
+                }
+                
+                // Stream the operation update with progress percentage
+                if (completedCount === 1 || completedCount === totalCount || completedCount % 5 === 0) {
+                  stream(`\n[${progress}%] ${formattedOpType}${target ? ` on ${target}` : ''}`);
+                }
+                
+                // If this is the last operation, add a completion message
+                if (completedCount === totalCount) {
+                  stream('\n\nAll operations completed successfully! ✓');
+                  unregisterOperationListener();
+                }
+              }
+            );
+            
+            // Register for operation failed events
+            const unregisterFailureListener = interpreter.on(
+              'operation:failed',
+              (data: any) => {
+                const { operation, error } = data;
+                const opType = operation.op || 'unknown';
+                
+                // Stream error details
+                stream(`\n\nError during ${opType}: ${error?.message || 'Unknown error'}`);
+                unregisterFailureListener();
+              }
+            );
+          }
+        }
+        
         // Execute the command asynchronously 
         // (we'll return before this completes, relying on status updates)
         this.commandManager.executeCommand(command.id).catch(error => {
           console.error('Error during command execution:', error);
+          // Stream error details if available
+          if (stream) {
+            stream(`\n\nError details: ${error.message || 'Unknown error'}`);
+          }
           // Error will be handled by the status listener
         });
         
@@ -1028,35 +1196,14 @@ export class ClientQueryProcessor {
           message: `I failed to complete the operation. Please try again`
         });
         
-        // If there was an error with the fallback and we're streaming, let the user know
         if (stream) {
           // Add a line break to separate from previous messages
-          stream('\n\n');
-          
-          // Send the first recovery message immediately
-          const randomMessage = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
-          stream(randomMessage);
-          
-          // Set up a new interval for recovery messages
-          let recoveryIndex = 0;
-          const recoveryInterval = setInterval(() => {
-            recoveryIndex++;
-            if (recoveryIndex < recoveryMessages.length) {
-              stream('\n\n' + recoveryMessages[recoveryIndex]);
-            } else {
-              // Stop after we've shown all recovery messages
-              clearInterval(recoveryInterval);
-            }
-          }, 3000); // Show a new message every 3 seconds
-          
-          // Clear the recovery interval after 15 seconds to prevent endless messages
-          setTimeout(() => {
-            clearInterval(recoveryInterval);
-          }, 15000);
+          stream("\n\nI'm sorry, I ran into an error while executing the Excel operations. Please try again later or with a different request.");
         }
+
         return {
           processId: pid,
-          assistantMessage: "I'm sorry, I encountered an error while planning the Excel operations. Please try again with a more specific request.",
+          assistantMessage: "I'm sorry, I ran into an error while executing the Excel operations. Please try again later or with a different request.",
           command: null
         };
       }

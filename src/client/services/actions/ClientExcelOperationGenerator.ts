@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Attachment, ClientAnthropicService, ModelType } from '../llm/ClientAnthropicService';
 import { OpenAIClientService } from '../llm/OpenAIClientService';
 import { ExcelCommandPlan, ExcelOperation } from '../../models/ExcelOperationModels';
+import { multimodalAnalysisService } from '../document-understanding/MultimodalAnalysisService';
+import { FormattingProtocol } from '../document-understanding/FormattingModels';
 
 /**
  * Service that generates Excel operations using the Anthropic API
@@ -15,6 +17,7 @@ export class ClientExcelOperationGenerator {
   private debugMode: boolean;
   private apiKey: string;
   private useOpenAIFallback: boolean;
+  private formattingProtocol: FormattingProtocol | null = null;
 
   constructor(params: {
     anthropic: ClientAnthropicService;
@@ -28,132 +31,21 @@ export class ClientExcelOperationGenerator {
     this.useOpenAIFallback = params.useOpenAIFallback !== undefined ? params.useOpenAIFallback : true;
     // get the api key from the .env file
     this.apiKey = process.env.ANTHROPIC_API_KEY;
+    
+    // Try to get the formatting protocol from the multimodal analysis service
+    this.formattingProtocol = multimodalAnalysisService.getCachedFormattingProtocol();
   }
 
   /**
-   * Generate Excel operations from a user query and workbook context
+   * Generate Excel operations with multimodal content
    * @param query The user query
    * @param workbookContext The workbook context
    * @param chatHistory The chat history
    * @param attachments The attachments
-   * @returns A command plan with operations
+   * @param retryCount The retry count
+   * @param maxRetries The maximum number of retries
+   * @returns The generated operations
    */
-  public async generateOperations(
-    query: string,
-    workbookContext: string,
-    chatHistory: Array<{ role: string; content: string }>,
-    attachments?: Attachment[]
-  ): Promise<ExcelCommandPlan> {
-    try {
-      // Parse the workbook context to extract formatting protocol if available
-      let formattingProtocol = null;
-      try {
-        const parsedContext = JSON.parse(workbookContext);
-        if (parsedContext.formattingProtocol) {
-          formattingProtocol = parsedContext.formattingProtocol;
-          if (this.debugMode) {
-            console.log('Found formatting protocol in workbook context');
-          }
-        }
-      } catch (parseError) {
-        console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
-      }
-      
-      // Create a system prompt for generating Excel operations
-      const systemPrompt = this.buildSystemPrompt(formattingProtocol);
-      
-      // Use the standard model for generating operations
-      const modelToUse = this.anthropic.getModel(ModelType.Standard);
-      
-      if (this.debugMode) {
-        console.log('Generating Excel operations:', {
-          model: modelToUse,
-          query: query.substring(0, 50) + (query.length > 50 ? '...' : ''),
-        });
-      }
-      
-      // Filter the chat history to only include the last 5 messages
-      // Format the chat history for context, filtering out system messages
-      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
-      // select only messages that have role user or assistant
-      const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
-      
-      // Convert messageHistory to Anthropic message format
-      const anthropicMessages = messageHistory.map(msg => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content
-      }));
-      
-      // Call the API to generate operations
-      const response = await this.anthropic.getClient().messages.create({
-        model: modelToUse,
-        system: systemPrompt,
-        messages: anthropicMessages,
-        max_tokens: 4000,
-        temperature: 0.2 // Low temperature for more deterministic results
-      });
-      
-      // Extract the response content
-      let responseContent = response.content?.[0]?.type === 'text' 
-        ? response.content[0].text 
-        : '{"description":"Error generating operations","operations":[]}';
-      
-      try {
-        // Use the extractJsonFromMarkdown utility to extract JSON from the response
-        // This handles cases where the LLM includes markdown formatting or additional text
-        responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
-        
-        if (this.debugMode) {
-          console.log('Extracted JSON from response:', responseContent);
-        }
-        
-        // Parse the extracted JSON response
-        const plan = JSON.parse(responseContent) as ExcelCommandPlan;
-        
-        if (this.debugMode) {
-          console.log('Generated Excel operations:', plan);
-        }
-        
-        // Validate the operations
-        this.validateOperations(plan.operations);
-        
-        return {
-          description: plan.description || 'Excel operations',
-          operations: plan.operations || []
-        };
-      } catch (parseError) {
-        console.error('Failed to parse operations JSON:', parseError);
-        // Return an empty plan if parsing fails
-        return {
-          description: 'Error parsing operations',
-          operations: []
-        };
-      }
-    } catch (error: any) {
-      console.error('Error generating Excel operations with Anthropic:', error);
-      
-      // Try OpenAI fallback if enabled and available
-      if (this.useOpenAIFallback && this.openai) {
-        try {
-          console.log('Attempting to generate operations with OpenAI fallback...');
-          return await this.openai.generateExcelOperations(query, workbookContext, chatHistory, attachments);
-        } catch (openaiError) {
-          console.error('OpenAI fallback also failed:', openaiError);
-          return {
-            description: 'Error generating operations (both Anthropic and OpenAI failed)',
-            operations: []
-          };
-        }
-      }
-      
-      return {
-        description: 'Error generating operations',
-        operations: []
-      };
-    }
-  }
-
-  // Function to send a multimodal request to Anthropic API
   public async generateOperationsWithMultimodal(
     query: string,
     workbookContext: string,
@@ -162,13 +54,13 @@ export class ClientExcelOperationGenerator {
     retryCount: number = 0,
     maxRetries: number = 2
   ): Promise<ExcelCommandPlan> {
-    try {
       // Parse the workbook context to extract formatting protocol if available
       let formattingProtocol = null;
       try {
         const parsedContext = JSON.parse(workbookContext);
         if (parsedContext.formattingProtocol) {
           formattingProtocol = parsedContext.formattingProtocol;
+          console.log('Formatting protocol extracted from workbook context:', formattingProtocol.length);
         }
       } catch (parseError) {
         console.warn('Error parsing workbook context to extract formatting protocol:', parseError);
@@ -176,26 +68,15 @@ export class ClientExcelOperationGenerator {
       
       // Create a system prompt for generating Excel operations
       const systemPrompt = this.buildSystemPrompt(formattingProtocol);
-      
-      // Use the standard model for generating operations
-      const modelToUse = this.anthropic.getModel(ModelType.Standard);
-      
-      // Filter the chat history to only include the last 5 messages
-      const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
+      // Filter the chat history to only include the last 1 messages
+      const filteredChatHistory = chatHistory.slice(-1).filter(msg => msg.role !== 'system');
       const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
-      
-      // Convert messageHistory to Anthropic message format
-      const anthropicMessages = messageHistory.map(msg => ({
-        role: msg.role as 'user' | 'assistant',
-        content: [{ type: 'text', text: msg.content }]
-      }));
-      
       // Create the final user message with multimodal content
       const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
       
       // Prepare the content array for the final user message
       let finalUserContent: any[] = [{ type: 'text', text: userPrompt }];
-      
+       
       // Add attachments if they exist
       if (attachments && attachments.length > 0) {
         for (const attachment of attachments) {
@@ -220,6 +101,96 @@ export class ClientExcelOperationGenerator {
           }
         }
       }
+      const anthropicForce = true;
+      if (anthropicForce) {
+        // try first with anthropic
+        try {
+          const operations = await this.generateOperationsWithAnthropic(finalUserContent, messageHistory, systemPrompt, retryCount, maxRetries);
+          return operations;
+        } catch (error) {
+          console.error('Error generating operations with Anthropic:', error);
+          return {
+            description: 'Error generating operations',
+            operations: []
+          };
+        }
+      }
+       // try first with openai
+      try {        
+        const operations = await this.generateOperationsWithOpenAI(query, systemPrompt,workbookContext, chatHistory, attachments);
+        return operations;
+      } catch (error) {
+        console.error('Error generating operations with OpenAI:', error);
+        // try with anthropic
+        if (retryCount < maxRetries) {
+          retryCount++;
+          try {
+            const anthropicResponse = await this.generateOperationsWithAnthropic(finalUserContent, messageHistory, systemPrompt, retryCount, maxRetries);
+            return anthropicResponse;
+          } catch (error) {
+            console.error('Error generating operations with Anthropic:', error);
+            return {
+              description: 'Error generating operations',
+              operations: []
+            };
+          }
+        }        
+      }
+      return {
+        description: 'Error generating operations',
+        operations: []
+      };
+    }
+
+
+  /**
+   * Generate Excel operations using OpenAI
+   * @param query The user query
+   * @param workbookContext The workbook context
+   * @param chatHistory The chat history
+   * @param attachments The attachments
+   * @param retryCount The retry count
+   * @param maxRetries The maximum number of retries
+   * @returns The generated operations
+   */
+
+  public async generateOperationsWithOpenAI(query: string, systemPrompt: string, workbookContext: string, chatHistory: any[], attachments: Attachment[] | null)  
+  {
+    try {
+      console.log('Attempting to generate operations with OpenAI Responses API...');
+      if (this.openai && typeof (this.openai as any).generateExcelOperationsWithResponses === 'function') {
+        // Use the new Responses API method if available
+        return await this.openai.generateExcelOperationsWithResponses(query, systemPrompt, workbookContext, chatHistory, attachments);
+      } else {
+        // Fall back to the regular method if needed
+        console.log('Falling back to standard OpenAI API...');
+        return await this.openai.generateExcelOperations(query, systemPrompt, workbookContext, chatHistory, attachments);
+      }
+    } catch (openaiError) {
+      console.error('Operation generation with OpenAI failed:', openaiError);
+      throw openaiError;
+    }
+  }
+
+  /**
+   * Generate Excel operations using Anthropic
+   * @param finalUserContent The final user content
+   * @param messageHistory The message history
+   * @param systemPrompt The system prompt
+   * @param retryCount The retry count
+   * @param maxRetries The maximum number of retries
+   * @returns The generated operations
+   */
+
+  public async generateOperationsWithAnthropic(finalUserContent: any[],  messageHistory: any[], systemPrompt: string, retryCount: number = 0, maxRetries: number = 0)  
+  {
+      const modelToUse = this.anthropic.getModel(ModelType.Standard);    
+      
+      // Convert messageHistory to Anthropic message format
+      const anthropicMessages = messageHistory.map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: [{ type: 'text', text: msg.content }]
+      }));
       
       // Add the final user message to the messages array
       anthropicMessages.push({
@@ -228,167 +199,44 @@ export class ClientExcelOperationGenerator {
       });
       
       // Use the Anthropic client from ClientAnthropicService
-      // This client is already initialized with dangerouslyAllowBrowser: true
-      const anthropicClient = this.anthropic.getClient();
-      
-      // Make the API call using the SDK
-      const responseData = await anthropicClient.messages.create({
-        model: modelToUse,
-        system: systemPrompt,
-        messages: anthropicMessages as any, // Type assertion to resolve SDK type issue
-        max_tokens: 4000,
-        temperature: 0.2
-      });
-      
-      // Extract the response content
-      let responseContent = responseData.content?.[0]?.type === 'text' 
-        ? responseData.content[0].text 
-        : '{"description":"Error generating operations","operations":[]}';
-      
-      try {
-        // Use the extractJsonFromMarkdown utility to extract JSON from the response
-        responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
+      // This client is already initialized with dangerouslyAllowBrowser: true      
+      try{
+        const anthropicClient = this.anthropic.getClient();
+        const responseData = await anthropicClient.messages.create({
+          model: modelToUse,
+          system: systemPrompt,
+          messages: anthropicMessages as any, // Type assertion to resolve SDK type issue
+          max_tokens: 4000,
+          temperature: 0.2
+        });
         
-        // Parse the extracted JSON response
-        const plan = JSON.parse(responseContent) as ExcelCommandPlan;
+        // Extract the response content
+        let responseContent = responseData.content?.[0]?.type === 'text' 
+          ? responseData.content[0].text 
+          : '{"description":"Error generating operations","operations":[]}';
         
-        return {
-          description: plan.description || 'Excel operations',
-          operations: plan.operations || []
-        };
-      } catch (parseError) {
-        console.error(`Failed to parse operations JSON (attempt ${retryCount + 1}/${maxRetries + 1}):`, parseError);
-        
-        // If we haven't exceeded max retries, try again with a more explicit prompt
-        if (retryCount < maxRetries) {
-          console.log(`Retrying operation generation with explicit JSON request (attempt ${retryCount + 2}/${maxRetries + 1})`);
-          
-          // Create a system prompt that's more explicit about JSON formatting
-          const retrySystemPrompt = this.buildSystemPrompt(formattingProtocol, true);
-          
-          // Retry with the same parameters but use the enhanced system prompt and increment retry count
-          try {
-            // Filter the chat history to only include the last 5 messages
-            const filteredChatHistory = chatHistory.slice(-5).filter(msg => msg.role !== 'system');
-            const messageHistory = filteredChatHistory.filter(msg => msg.role === 'user' || msg.role === 'assistant');
-            
-            // Convert messageHistory to Anthropic message format
-            const anthropicMessages = messageHistory.map(msg => ({
-              role: msg.role as 'user' | 'assistant',
-              content: [{ type: 'text', text: msg.content }]
-            }));
-            
-            // Create the final user message with multimodal content
-            const userPrompt = `User query: ${query}. Here is the workbook context to reference while generating operations: ${workbookContext}`;
-            
-            // Prepare the content array for the final user message
-            let finalUserContent: any[] = [{ type: 'text', text: userPrompt }];
-            
-            // Add attachments if they exist
-            if (attachments && attachments.length > 0) {
-              for (const attachment of attachments) {
-                if (attachment.type === 'image') {
-                  finalUserContent.push({
-                    type: 'image',
-                    source: {
-                      type: 'base64',
-                      media_type: attachment.mimeType,
-                      data: attachment.content
-                    }
-                  });
-                } else if (attachment.type === 'pdf') {
-                  finalUserContent.push({
-                    type: 'image', // Anthropic handles PDFs as images with the right MIME type
-                    source: {
-                      type: 'base64',
-                      media_type: attachment.mimeType,
-                      data: attachment.content
-                    }
-                  });
-                }
-              }
-            }
-            
-            // Add the final user message to the messages array
-            anthropicMessages.push({
-              role: 'user',
-              content: finalUserContent
-            });
-            
-            // Use the Anthropic client from ClientAnthropicService
-            const anthropicClient = this.anthropic.getClient();
-            
-            // Make the API call using the SDK with the retry system prompt
-            const retryResponseData = await anthropicClient.messages.create({
-              model: this.anthropic.getModel(ModelType.Standard),
-              system: retrySystemPrompt, // Use the enhanced system prompt for retry
-              messages: anthropicMessages as any,
-              max_tokens: 4000,
-              temperature: 0.1 // Lower temperature for more deterministic output on retry
-            });
-            
-            // Extract the response content
-            let retryResponseContent = retryResponseData.content?.[0]?.type === 'text' 
-              ? retryResponseData.content[0].text 
-              : '{"description":"Error generating operations","operations":[]}';
-            
-            // Extract and parse JSON
-            retryResponseContent = this.anthropic.extractJsonFromMarkdown(retryResponseContent);
-            const retryPlan = JSON.parse(retryResponseContent) as ExcelCommandPlan;
-            
-            // Validate the operations
-            this.validateOperations(retryPlan.operations);
-            
-            return {
-              description: retryPlan.description || 'Excel operations (retry)',
-              operations: retryPlan.operations || []
-            };
-          } catch (retryError) {
-            console.error(`Retry attempt ${retryCount + 1} failed:`, retryError);
-            
-            // If we still have retries left, try again
-            if (retryCount + 1 < maxRetries) {
-              return this.generateOperationsWithMultimodal(query, workbookContext, chatHistory, attachments, retryCount + 1, maxRetries);
-            }
-            
-            // Otherwise return empty operations
-            return {
-              description: 'Error parsing operations after multiple retry attempts',
-              operations: []
-            };
-          }
-        }
-        
-        // If we've exceeded max retries, return an empty plan
-        return {
-          description: 'Error parsing operations after multiple attempts',
-          operations: []
-        };
-      }
-    } catch (error: any) {
-      console.error('Error generating Excel operations with Anthropic:', error);
-      
-      // Try OpenAI fallback if enabled and available
-      if (this.useOpenAIFallback && this.openai) {
         try {
-          console.log('Attempting to generate operations with OpenAI fallback...');
-          return await this.openai.generateExcelOperations(query, workbookContext, chatHistory, attachments);
-        } catch (openaiError) {
-          console.error('OpenAI fallback also failed:', openaiError);
+          // Use the extractJsonFromMarkdown utility to extract JSON from the response
+          responseContent = this.anthropic.extractJsonFromMarkdown(responseContent);
+          
+          // Parse the extracted JSON response
+          const plan = JSON.parse(responseContent) as ExcelCommandPlan;
+          
           return {
-            description: 'Error generating operations (both Anthropic and OpenAI failed)',
-            operations: []
+            description: plan.description || 'Excel operations',
+            operations: plan.operations || []
           };
+        } catch (parseError) {
+          console.error(`Failed to parse operations JSON (attempt ${retryCount + 1}/${maxRetries + 1}):`, parseError);
+          throw parseError;
         }
       }
-      
-      return {
-        description: 'Error generating operations',
-        operations: []
-      };
+      catch(error){
+        console.error('Error generating operations with Anthropic:', error);
+        throw error;
+      }
     }
-  }
-  
+
   /**
    * Validate the operations to ensure they are well-formed
    * @param operations The operations to validate
@@ -408,12 +256,12 @@ export class ClientExcelOperationGenerator {
   }
   
   /**
-   * Build the system prompt for generating Excel operations
-   * @param formattingProtocol Optional formatting protocol to include in the prompt
+   * Build the system prompt for the Excel operation generator
+   * @param formattingProtocol The formatting protocol (optional)
    * @param isRetry Whether this is a retry attempt after a failed parsing
    * @returns The system prompt
    */
-  private buildSystemPrompt(formattingProtocol: any = null, isRetry: boolean = false): string {
+  private buildSystemPrompt(formattingProtocol: FormattingProtocol | null = null, isRetry: boolean = false): string {
     let basePrompt = `You are an expert Excel assistant that generates operations for Excel workbooks. Your task is to analyze user queries and generate a list of Excel operations to fulfill their requests.
 
 CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for. DO NOT add any additional operations that the user did not request. If the user asks to "add a new tab", ONLY create a new worksheet and DO NOT add any data, charts, or formatting to it unless specifically requested.`;
@@ -425,16 +273,13 @@ CRITICAL INSTRUCTION: ONLY generate operations that the user EXPLICITLY asks for
 CRITICAL JSON FORMATTING INSTRUCTION: Your previous response contained invalid JSON that could not be parsed. You MUST respond with ONLY a valid JSON object in a code block. Do not include any explanations, notes, or text outside the JSON code block. The JSON must exactly follow the schema provided below with no extra or missing fields. Ensure all quotes, brackets, and commas are properly placed.`;
     }
     
-    // Add formatting protocol instructions if available
+    // Update the formatting protocol in the system prompt if available
     if (formattingProtocol) {
+      console.log('Using formatting protocol in system prompt');
       basePrompt += `
 
-IMPORTANT: When generating operations that involve formatting or styling, follow the user's existing formatting conventions as described below. This ensures consistency with the user's workbook design.
-
 FORMATTING PROTOCOL:
-`;
-      
-      // Add color coding instructions
+${JSON.stringify(formattingProtocol, null, 2)}`;
       if (formattingProtocol.colorCoding) {
         basePrompt += `
 COLOR CODING CONVENTIONS:
@@ -987,12 +832,11 @@ REMEMBER: If the user asks for a simple operation like "add a new tab named Sale
 
 ANTI-PATTERNS TO AVOID:
 1. DO NOT create sample data unless explicitly requested
-2. DO NOT add formatting to make things "look nice" unless explicitly requested
-3. DO NOT create charts or visualizations unless explicitly requested
-4. DO NOT add formulas or calculations unless explicitly requested
-5. DO NOT add headers or labels unless explicitly requested
-6. DO NOT create multiple sheets when only one was requested
-7. DO NOT add operations that seem "helpful" but weren't requested
+2. DO NOT create charts or visualizations unless explicitly requested
+4. DO NOT create multiple sheets when only one was requested
+5. DO NOT add operations that seem "helpful" but weren't requested
+6. DO NOT respond with string responses like "I'll perform [action]" or "I'll do [this operation]". Remember that you have to respond only with the JSON schema.
+
 
 When in doubt, be minimalist and only do exactly what was asked.`;
   }

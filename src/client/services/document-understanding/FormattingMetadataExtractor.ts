@@ -1,3 +1,4 @@
+import { FormattingMetadataLogger } from './FormattingMetadataLogger';
 /**
  * Extractor for Excel workbook formatting metadata
  */

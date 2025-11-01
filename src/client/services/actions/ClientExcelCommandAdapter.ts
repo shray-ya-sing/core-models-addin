@@ -20,6 +20,14 @@ export class ClientExcelCommandAdapter {
     this.interpreter = interpreter || new ClientExcelCommandInterpreter();
     console.log(`🔄 [ClientExcelCommandAdapter] Using ${interpreter ? 'provided' : 'new'} interpreter instance`);
   }
+  
+  /**
+   * Get the Excel command interpreter instance
+   * @returns The Excel command interpreter
+   */
+  public getCommandInterpreter(): ClientExcelCommandInterpreter {
+    return this.interpreter;
+  }
 
   /**
    * Execute a command using the Excel Operations DSL
@@ -41,46 +49,52 @@ export class ClientExcelCommandAdapter {
       for (const step of command.steps) {
         // Get step index from the steps array
         const stepIndex = command.steps.indexOf(step);
-        console.log(`📑 [ClientExcelCommandAdapter] Processing step ${stepIndex}: ${step.description}`);
+        console.log(`📋 [ClientExcelCommandAdapter] Processing step ${stepIndex}: ${step.description}`);
         
         // Extract Excel operations from the step operations
         const excelOperations = this.extractExcelOperations(step.operations);
         console.log(`📊 [ClientExcelCommandAdapter] Extracted ${excelOperations.length} Excel operations from step`);
         
         if (excelOperations.length > 0) {
-          // Check for duplicate operations
-          excelOperations.forEach(op => {
-            // Create a fingerprint for the operation
-            const fingerprint = this.createOperationFingerprint(op);
-            
-            // Check if we've seen this operation ID before
-            if (op.id && operationIds.has(op.id)) {
-              console.warn(`⚠️ [ClientExcelCommandAdapter] Duplicate operation ID detected: ${op.id}`);
-            } else if (op.id) {
-              operationIds.add(op.id);
-            }
-            
-            // Check if we've seen this operation fingerprint before
-            if (operationFingerprints.has(fingerprint)) {
-              const count = operationFingerprints.get(fingerprint) || 0;
-              operationFingerprints.set(fingerprint, count + 1);
-              console.warn(`⚠️ [ClientExcelCommandAdapter] Duplicate operation detected by fingerprint: ${fingerprint} (count: ${count + 1})`);
-            } else {
-              operationFingerprints.set(fingerprint, 1);
-            }
-            
-            // Collect operation types for cache invalidation
-            if (op.op && !executedOperationTypes.includes(op.op)) {
-              executedOperationTypes.push(op.op);
-            }
-          });
-          
           console.log(`🔄 [ClientExcelCommandAdapter] Executing ${excelOperations.length} operations`);
+          
           // Execute the Excel operations using the interpreter
           await this.interpreter.executeOperations(excelOperations);
+          
+          // Process operations for tracking and logging
+          excelOperations.forEach(op => {
+            try {
+              // Create a fingerprint for the operation
+              const fingerprint = this.createOperationFingerprint(op);
+              
+              // Check if we've seen this operation ID before
+              if (op.id && operationIds.has(op.id)) {
+                console.warn(`⚠️ [ClientExcelCommandAdapter] Duplicate operation ID detected: ${op.id}`);
+              } else if (op.id) {
+                operationIds.add(op.id);
+              }
+              
+              // Check if we've seen this operation fingerprint before
+              if (operationFingerprints.has(fingerprint)) {
+                const count = operationFingerprints.get(fingerprint) || 0;
+                operationFingerprints.set(fingerprint, count + 1);
+                console.warn(`⚠️ [ClientExcelCommandAdapter] Duplicate operation detected by fingerprint: ${fingerprint} (count: ${count + 1})`);
+              } else {
+                operationFingerprints.set(fingerprint, 1);
+              }
+              
+              // Collect operation types for cache invalidation
+              if (op.op && !executedOperationTypes.includes(op.op)) {
+                executedOperationTypes.push(op.op);
+              }
+            } 
+            catch (error) {
+              console.error(`Error in operation ${op.op}`, error);
+            }
+          });
         }
       }
-      
+         
       // Log summary of duplicate operations
       let duplicateCount = 0;
       operationFingerprints.forEach((count, fingerprint) => {
@@ -91,7 +105,7 @@ export class ClientExcelCommandAdapter {
       });
       
       if (duplicateCount > 0) {
-        console.warn(`🚨 [ClientExcelCommandAdapter] Found ${duplicateCount} duplicate operations in command`);
+        console.warn(`💨 [ClientExcelCommandAdapter] Found ${duplicateCount} duplicate operations in command`);
       } else {
         console.log(`✅ [ClientExcelCommandAdapter] No duplicate operations detected in command`);
       }
@@ -100,7 +114,8 @@ export class ClientExcelCommandAdapter {
       return executedOperationTypes;
     } catch (error) {
       console.error('Error executing Excel command:', error);
-      throw error;
+      // Return empty array in case of error
+      return [];
     }
   }
 

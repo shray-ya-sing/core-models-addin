@@ -23,62 +23,6 @@ const PNG_SIGNATURE_BASE64_PREFIX = 'iVBORw';
  * System prompt for the formatting protocol analysis
  */
 const FORMATTING_PROTOCOL_SYSTEM_PROMPT = `You are an expert Excel financial modeling analyst specializing in institutional-grade financial model formatting. Your task is to analyze Excel workbook images and formatting metadata to identify patterns and conventions used in the financial model.
-
-You must identify the following aspects of the formatting protocol:
-
-1. Color coding conventions
-   - Identify colors used for different cell types (calculations, hardcoded values, inputs, etc.)
-   - Note any color patterns for positive/negative values
-   - Identify header/title formatting
-
-2. Number formatting conventions
-   - Currency formats
-   - Percentage formats
-   - Date formats
-   - Negative number formatting
-
-3. Border styling
-   - Table borders
-   - Section dividers
-   - Total/subtotal row formatting
-
-4. Chart formatting
-   - Preferred chart types for different data
-   - Title, legend, and axis formatting
-   - Data label conventions
-
-5. Font usage
-   - Header fonts and styles
-   - Body text fonts and styles
-   - Title fonts and styles
-
-6. Table formatting
-   - Header row styling
-   - Data row styling (alternating colors?)
-   - Total row styling
-
-7. Financial statement formatting
-   - Income statement conventions
-   - Balance sheet conventions
-   - Cash flow statement conventions
-   - Supporting schedule conventions
-
-8. Workbook structure
-   - Tab ordering/grouping
-   - Section dividers within sheets
-   - Input vs. calculation vs. output areas
-
-9. Cover page formatting
-   - Title styling
-   - Company information placement
-   - Date formatting
-
-10. Scenario / Sensitivity table formatting
-  - Usually have highlights or outlining to demarcate different scenarios
-  - Usually laid out as a table with columns and rows for different variables under different scenarios. 
-  - Usually, the middle column and middle row represent the "main" case while the others represent "sensitized" cases
-  - Usually, the middle column and middle row are bolded and have a distinct background color
-
 You MUST respond with a valid JSON object that follows this exact schema. DO NOT include any explanatory text, markdown formatting, or code block syntax. The response must be a valid JSON object that can be parsed directly.
 
 Schema:
@@ -94,14 +38,6 @@ Schema:
     "subtotals": "#HEXCODE",
     "errors": "#HEXCODE",
     "negativeValues": "#HEXCODE",
-    "custom": {}
-  },
-  "numberFormatting": {
-    "currency": "format pattern",
-    "percentage": "format pattern",
-    "date": "format pattern",
-    "general": "format pattern",
-    "negativeNumbers": "format pattern",
     "custom": {}
   },
   "borderStyles": {
@@ -254,92 +190,6 @@ Schema:
       "borders": "description"
     }
   },
-  "scheduleFormatting": {
-    "incomeStatement": "description",
-    "balanceSheet": "description",
-    "cashFlow": "description",
-    "debtSchedule": "description",
-    "capex": "description",
-    "depreciation": "description",
-    "taxSchedule": "description",
-    "workingCapital": "description",
-    "custom": {}
-  },
-  "workbookStructure": {
-    "tabOrdering": "description",
-    "tabGrouping": "description",
-    "sectionDividers": "description",
-    "inputSections": "description",
-    "outputSections": "description",
-    "calculationSections": "description"
-  },
-  "scenarioFormatting": {
-    "sensitivityTables": {
-      "layout": "description",
-      "highlighting": "description",
-      "baseCase": {
-        "position": "description",
-        "formatting": "description"
-      }
-    },
-    "scenarioManager": {
-      "used": true,
-      "structure": "description"
-    },
-    "dataTables": {
-      "used": true,
-      "structure": "description"
-    }
-  },
-  "coverPageFormatting": {
-    "title": {
-      "font": {
-        "name": "font name",
-        "size": 16,
-        "bold": true,
-        "color": "#HEXCODE"
-      },
-      "alignment": "alignment description"
-    },
-    "subtitle": {
-      "font": {
-        "name": "font name",
-        "size": 14,
-        "bold": true,
-        "color": "#HEXCODE"
-      },
-      "alignment": "alignment description"
-    },
-    "logo": {
-      "position": "position description",
-      "size": "size description"
-    },
-    "companyInfo": {
-      "font": {
-        "name": "font name",
-        "size": 12,
-        "bold": false,
-        "color": "#HEXCODE"
-      },
-      "alignment": "alignment description"
-    },
-    "date": {
-      "format": "format pattern",
-      "position": "position description"
-    }
-  },
-  "workbookType": {
-    "financialModel": true,
-    "threeStatementModel": false,
-    "dcfModel": false,
-    "lboModel": false,
-    "mergersModel": false,
-    "budgetModel": false,
-    "forecastModel": false,
-    "operationalModel": false,
-    "dashboardModel": false,
-    "custom": "description if applicable"
-  },
   "yearSuffixes": {
     "actual": "A",
     "projected": "P",
@@ -477,51 +327,97 @@ export class FormattingProtocolAnalyzer {
    */
   public async analyzeFormattingProtocol(): Promise<FormattingProtocol> {
     try {
+      console.log('🔍 STARTING FULL FORMATTING PROTOCOL ANALYSIS WITH LLM');
+      console.log('Step 1: Preparing message with images and formatting metadata');
+      
       // Prepare message with images and formatting metadata
       const messageData = await this.prepareFormattingProtocolMessage();
       
       // Check if we have any images in the message
-      const hasImages = messageData.messages.some(msg => msg.type === 'image');
+      const hasImages = messageData.images && messageData.images.length > 0;
+      console.log(`Images for LLM analysis: ${hasImages ? messageData.images.length + ' images available' : 'No images available'}`);
+      
       if (!hasImages) {
         console.warn('No images available for formatting protocol analysis. Proceeding with metadata only.');
       }
+      
+      // IMPORTANT: Limit the data to only the first 5 worksheets to reduce token count
+      if (hasImages && messageData.images.length > 5) {
+        console.log(`⚠️ Limiting analysis to first 5 worksheets to reduce token count (from ${messageData.images.length} total)`);
+        messageData.images = messageData.images.slice(0, 5);
+      }
+      
+      // Trim the metadata to reduce token count
+      if (messageData.formattingMetadata && messageData.formattingMetadata.sheets) {
+        const worksheetCount = messageData.formattingMetadata.sheets.length;
+        if (worksheetCount > 5) {
+          console.log(`⚠️ Limiting metadata to first 5 worksheets to reduce token count (from ${worksheetCount} total)`);
+          
+          // Keep only the first 5 worksheets in the metadata
+          messageData.formattingMetadata.sheets = messageData.formattingMetadata.sheets.slice(0, 5);
+          
+          // Log the names of the worksheets we're keeping
+          const keptWorksheetNames = messageData.formattingMetadata.sheets.map(sheet => sheet.name).join(', ');
+          console.log(`   Keeping worksheets: ${keptWorksheetNames}`);
+          
+          // Update the metadata message with the trimmed data
+          messageData.metadataMessage.text = `Formatting Metadata (limited to first 5 worksheets):\n\`\`\`json\n${JSON.stringify(messageData.formattingMetadata, null, 2)}\n\`\`\`\n\nPlease analyze ${messageData.images.length > 0 ? 'the images and' : 'the'} metadata to identify the formatting protocol used in this workbook. Follow the schema provided in the system prompt.`;
+        }
+      }
+      
+      // Log the reduced size
+      console.log(`Reduced metadata size: ${JSON.stringify(messageData.formattingMetadata).length} characters`);
+      console.log(`Reduced image count: ${messageData.images.length} images`);
       
       // Try with Anthropic first (up to 2 retries)
       let formattingProtocol: FormattingProtocol | null = null;
       let error: Error | null = null;
       
       // Try Anthropic up to 3 times (initial + 2 retries)
+      console.log('Step 2: Sending request to Anthropic Claude for formatting analysis');
+      console.log(`Final metadata size: ${JSON.stringify(messageData.formattingMetadata).length} characters`);
+      console.log(`Final image count: ${messageData.images.length} images`);
+      
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
+          console.log(`🔄 LLM Analysis attempt ${attempt + 1}/3...`);
+          
           // If not the first attempt, add a feedback message to the system prompt
           let updatedSystemPrompt = FORMATTING_PROTOCOL_SYSTEM_PROMPT;
           if (attempt > 0) {
+            console.log('Using modified prompt for retry attempt');
             updatedSystemPrompt = `IMPORTANT: Previous response was invalid. Please ensure you return ONLY valid JSON without any markdown formatting, explanatory text, or code block syntax. The response must be a valid JSON object that can be parsed directly.\n\n${FORMATTING_PROTOCOL_SYSTEM_PROMPT}`;
           }
           
+          console.log('Calling Anthropic API with Claude model...');
           // Call the Anthropic API to analyze the formatting protocol
           const response = await this.callAnthropicApi(
             messageData,
             updatedSystemPrompt
           );
           
+          console.log('Received response from Anthropic API, extracting text...');
           // Extract text from the response
           const responseText = this.extractTextFromResponse(response);
           
+          console.log('Extracting JSON from LLM response...');
           // Use the ClientAnthropicService's extractJsonFromMarkdown method to extract JSON
           const extractedJson = this.anthropicService.extractJsonFromMarkdown(responseText);
           
           if (extractedJson) {
             try {
+              console.log('Parsing extracted JSON...');
               formattingProtocol = JSON.parse(extractedJson);
+              console.log('✅ Successfully parsed formatting protocol from LLM response');
+              console.log(`Protocol contains ${Object.keys(formattingProtocol).length} top-level categories`);
               // Successfully parsed, break out of retry loop
               break;
             } catch (e) {
-              console.error(`Attempt ${attempt + 1}: Error parsing JSON from Anthropic response:`, e);
+              console.error(`❌ Attempt ${attempt + 1}: Error parsing JSON from Anthropic response:`, e);
               error = new Error('Failed to parse formatting protocol from Anthropic response');
             }
           } else {
-            console.error(`Attempt ${attempt + 1}: No valid JSON formatting protocol found in Anthropic response`);
+            console.error(`❌ Attempt ${attempt + 1}: No valid JSON formatting protocol found in Anthropic response`);
             error = new Error('No valid JSON formatting protocol found in Anthropic response');
           }
         } catch (e) {
@@ -557,9 +453,10 @@ export class FormattingProtocolAnalyzer {
         }
       }
       
+      console.log(formattingProtocol ? '🎉 Formatting protocol analysis complete!' : '❌ Failed to generate formatting protocol');
       return formattingProtocol;
     } catch (error) {
-      console.error('Error analyzing formatting protocol:', error);
+      console.error('❌ Error analyzing formatting protocol:', error);
       throw error;
     }
   }
